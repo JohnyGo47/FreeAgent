@@ -1,0 +1,9 @@
+{
+  "name": "@freeagent/cli",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "dependencies": {
+    "@freeagent/shared": "*"
+  }
+}
