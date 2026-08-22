@@ -1,0 +1,16 @@
+{
+  "name": "@freeagent/extension",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@freeagent/shared": "*"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.0.328",
+    "esbuild": "0.28.2"
+  }
+}
