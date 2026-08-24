@@ -58,7 +58,9 @@ LLM часто оборачивают ответ в markdown: ` ```\n[MSG|...]\n
 - `toTagFormat` и `fromTagFormat` импортируются из `/shared/bus-types` — content script не дублирует конвертацию
 
 ## Dependencies
-`spec_message_bus_types` (конвертеры), `spec_llm_adapter_registry` (селекторы), `spec_selector_resilience` (fallback-цепочки), `spec_response_complete_detection` (когда ответ готов), `spec_ext_manifest` (content script контекст)
+`spec_message_bus_types` (конвертеры), `spec_llm_adapter_registry` (селекторы), `spec_selector_resilience` (fallback-цепочки — **PR-6**; в PR-4 резолв простым перебором, см. заметку), `spec_response_complete_detection` (когда ответ готов), `spec_ext_manifest` (content script контекст)
+
+> **Резолв селектора без `selector_resilience` (PR-6).** В PR-4 инжект резолвит `input`/`submit` **простым перебором массива** селекторов из `llm_adapter_registry` — первый найденный побеждает. `selector_resilience` (PR-6) позже оборачивает этот резолв self-healing'ом и community-registry, не меняя интерфейс `resolveSelector(chain)`. В PR-4 `selector_resilience` не импортировать — заложить шов.
 
 ## Tests
 ### Unit

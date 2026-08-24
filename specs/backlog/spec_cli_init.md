@@ -57,7 +57,7 @@
 - Работает без расширения — CLI и расширение связываются позже через `project_id`
 
 ## Dependencies
-`spec_config`, `spec_skills_system`, `spec_git_checkpoints` (для git-интеграции)
+`spec_config` (полная). Мягкие (кода из будущих PR не требуют, `cli_init` реализуется автономно в PR-3): `spec_git_checkpoints` — нужен только `git` в PATH для `git init` и строки `/freeagent/` в `.gitignore`, не логика чекпоинтов; `spec_skills_system` — встроенные скиллы копируются как файлы-шаблоны из `/cli/templates/skills/`, парсер и валидация ролей не нужны (появляются в PR-5).
 
 ## Tests
 ### Unit

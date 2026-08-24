@@ -23,7 +23,9 @@
 - `/mode` персистится в `freeagent.config.json`
 
 ## Dependencies
-`spec_cli`, `spec_message_bus_types`, `spec_skills_system`
+`spec_cli`, `spec_message_bus_types`, `spec_skills_system`, `spec_file_access` (дерево проекта — PR-4, см. заметку)
+
+> **Дерево проекта.** Режим плана полезен, только если оркестратор получил дерево проекта в начале сессии (bootstrap — `spec_file_access` §6). Иначе он планирует по выдуманным путям. Дерево не входит в этот PR; зависимость учитывается при написании `file_access` (PR-4).
 
 > `cli_plan_mode` производит утверждённый план (`APPROVED`). `plan_execution` его потребляет. Зависимость — однонаправленная: `plan_execution` → `cli_plan_mode`, не наоборот.
 

@@ -4,7 +4,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 // fs.open(path, 'wx') — атомарное эксклюзивное создание на уровне ОС (ARCHITECTURE §4, spec_message_bus_write)
 export async function withLock(lockPath: string, fn: () => Promise<void>): Promise<void> {
-  for (let attempt = 0; attempt < 10; attempt++) {
+  for (let attempt = 0; attempt < 30; attempt++) {
     let fd;
     try {
       fd = await open(lockPath, 'wx');
@@ -21,5 +21,5 @@ export async function withLock(lockPath: string, fn: () => Promise<void>): Promi
     }
     return;
   }
-  throw new Error('bus lock timeout 500ms');
+  throw new Error('bus lock timeout 1500ms');
 }

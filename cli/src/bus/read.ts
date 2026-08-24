@@ -3,38 +3,11 @@ import { watch as watchFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { parseBusLine, type BusMessage } from '../../../shared/bus-types/index.ts';
 import { log } from '../../../shared/log.ts';
+import { makeBatchFromContent, type Batch, type BusFileSource } from '../../../shared/bus-source.ts';
 
-export interface BusLine {
-  text: string;
-  position: number; // ponytail: индекс в строке файла, не байтовый offset — весь файл перечитывается на каждом тике, ротация (spec_bus_rotation) сделает это неверным допущением
-}
+export type { BusLine, Batch, BusFileSource } from '../../../shared/bus-source.ts';
 
-export interface Batch {
-  linesAfter(cursor: number): BusLine[];
-}
-
-export interface BusFileSource {
-  watch(): AsyncGenerator<Batch>;
-}
-
-function makeBatch(content: string): Batch {
-  return {
-    linesAfter(cursor: number): BusLine[] {
-      const result: BusLine[] = [];
-      let pos = cursor;
-      while (true) {
-        const newlineIdx = content.indexOf('\n', pos);
-        if (newlineIdx === -1) break; // хвост без \n — запись ещё идёт, не парсить
-        const text = content.slice(pos, newlineIdx);
-        pos = newlineIdx + 1;
-        if (text.length > 0) result.push({ text, position: pos });
-      }
-      return result;
-    },
-  };
-}
-
-// NodeFsSource — единственная реализация BusFileSource в PR-1. FsaSource (браузер) — PR-2.
+// NodeFsSource — реализация BusFileSource для CLI (PR-1). FsaSource (extension) — shared/bus-source.ts + extension/src/bus (PR-2).
 export class NodeFsSource implements BusFileSource {
   private readonly filePath: string;
 
@@ -44,7 +17,7 @@ export class NodeFsSource implements BusFileSource {
 
   private async readBatch(): Promise<Batch> {
     const content = await readFile(this.filePath, 'utf8').catch(() => '');
-    return makeBatch(content);
+    return makeBatchFromContent(content);
   }
 
   async *watch(): AsyncGenerator<Batch> {

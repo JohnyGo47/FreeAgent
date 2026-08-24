@@ -4,11 +4,50 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile, open, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BusWriter } from './write.ts';
 import { NodeFsSource, BusReader } from './read.ts';
+import { InstanceBusWriter } from '../../../extension/src/bus/instanceBusWriter.ts';
+
+// Тестовый мост FileSystemFileHandle -> node:fs: InstanceBusWriter (offscreen, Tier 1) написан
+// против FSA-хэндла; в этой интеграционной проверке ему подкладывается реальный файл на диске,
+// чтобы прогнать его without a browser through the actual Tier 2 merge + NodeFsSource reader.
+async function ensureFileExists(path: string): Promise<void> {
+  const fh = await open(path, 'a');
+  await fh.close();
+}
+
+class NodeBackedFileHandle {
+  private readonly path: string;
+
+  constructor(path: string) {
+    this.path = path;
+  }
+
+  async getFile(): Promise<{ size: number }> {
+    await ensureFileExists(this.path);
+    const s = await stat(this.path);
+    return { size: s.size };
+  }
+
+  async createWritable(): Promise<{
+    write(chunk: { type: 'write'; position: number; data: string }): Promise<void>;
+    close(): Promise<void>;
+  }> {
+    await ensureFileExists(this.path);
+    const fh = await open(this.path, 'r+');
+    return {
+      write: async (chunk) => {
+        await fh.write(chunk.data, chunk.position, 'utf8');
+      },
+      close: async () => {
+        await fh.close();
+      },
+    };
+  }
+}
 
 async function collectN<T>(gen: AsyncGenerator<T>, n: number, timeoutMs = 4000): Promise<T[]> {
   const results: T[] = [];

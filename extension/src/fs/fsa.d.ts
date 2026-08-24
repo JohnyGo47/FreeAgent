@@ -15,4 +15,12 @@ declare global {
   interface Window {
     showDirectoryPicker(options?: { mode?: 'read' | 'readwrite' }): Promise<FileSystemDirectoryHandle>;
   }
+
+  // FileSystemObserver — Chrome/Edge only (spec_message_bus_read), не в lib.dom.d.ts.
+  interface FileSystemObserverConstructor {
+    new (callback: () => void): {
+      observe(handle: FileSystemHandle): Promise<void>;
+      disconnect(): void;
+    };
+  }
 }

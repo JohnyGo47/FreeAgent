@@ -10,11 +10,11 @@
 ### ✅ Готовы
 | Спека | Версия | Что внутри |
 |---|---|---|
-| ARCHITECTURE.md | 1.0 | сквозные решения + журнал |
+| ARCHITECTURE.md | 1.1 | сквозные решения + журнал |
 | STACK.md | 2.0 | стек, файловая структура, отвергнутые варианты |
-| spec_message_bus_types | 2.0 | 18 типов, AgentStatus, конвертеры |
-| spec_message_bus_write | 3.0 | два уровня, instance_id |
-| spec_message_bus_read | 2.0 | курсоры, две реализации source |
+| spec_message_bus_types | 2.1 | 17 типов, AgentStatus (10, без ACTIVE), id, конвертеры |
+| spec_message_bus_write | 3.1 | два уровня, seq-recovery, дедуп по id |
+| spec_message_bus_read | 2.1 | курсоры (at-least-once), две реализации source |
 | spec_config | 1.0 | настройки, связывание CLI ↔ расширение |
 | spec_cli | 1.0 | команды, TUI, главный цикл |
 | spec_ext_manifest | 2.0 | MV3-каркас, 4 контекста |
@@ -36,6 +36,14 @@
 | Спека | Зачем |
 |---|---|
 | **spec_file_access** | **READ-протокол, дерево проекта — пишется в отдельном чате, БЛОКЕР PR-4** |
+
+### Многоэтапные спеки (реализуются в двух PR)
+| Спека | PR | Что в каком PR |
+|---|---|---|
+| spec_message_bus_write | PR-1 + PR-2 | Tier 2 (CLI-мерж) в PR-1; Tier 1 (offscreen-писатель в incoming/) в PR-2 |
+| spec_message_bus_read | PR-1 + PR-2 | NodeFsSource в PR-1; FsaSource в PR-2 |
+
+**Не уводить эти две спеки в `specs/done/` до конца PR-2** — после PR-1 они реализованы наполовину. Это единственные многоэтапные спеки в проекте (проверено по всем зависимостям).
 
 ## Порядок PR
 
