@@ -1,0 +1,69 @@
+// Внутрисессионные команды TUI (spec_cli §"Внутрисессионные команды").
+// /status /agents /log /files отвечают механически из уже известного состояния — ни одна не
+// требует сообщения оркестратору (ARCHITECTURE §13).
+import { randomUUID } from 'node:crypto';
+import type { AgentsRegistry } from '../registry/registry.ts';
+import type { BusMessage, TaskPayload } from '../../../shared/bus-types/index.ts';
+import type { FreeAgentConfig } from '../config/config.ts';
+import { agentsStatus, filesWritten, recentLog, statusSummary } from './status.ts';
+
+export interface ReplContext {
+  registry: AgentsRegistry;
+  messages: BusMessage[];
+  config: FreeAgentConfig;
+}
+
+export interface ReplResult {
+  output: string;
+  toOrchestrator?: BusMessage;
+  configPatch?: Partial<FreeAgentConfig>;
+}
+
+function out(output: string): ReplResult {
+  return { output };
+}
+
+export function runReplCommand(input: string, ctx: ReplContext): ReplResult {
+  const [cmd, ...rest] = input.trim().split(/\s+/);
+  const arg = rest.join(' ');
+
+  switch (cmd) {
+    case '/status': {
+      const s = statusSummary(ctx.registry, ctx.messages);
+      return out(`working: ${s.agentsWorking}, idle: ${s.agentsIdle}, unavailable: ${s.agentsUnavailable}`);
+    }
+    case '/agents':
+      return out(
+        agentsStatus(ctx.registry)
+          .map((a) => `${a.agent_id} [${a.role}] ${a.status}`)
+          .join('\n'),
+      );
+    case '/log':
+      return out(recentLog(ctx.messages, Number(arg) || 20).map((m) => `${m.ts} ${m.from}->${m.to} ${m.type}`).join('\n'));
+    case '/files':
+      return out(filesWritten(ctx.messages).join('\n'));
+    case '/mode': {
+      const mode = arg === 'yolo' ? 'yolo' : 'plan';
+      return { output: `mode: ${mode}`, configPatch: { mode } };
+    }
+    case '/btw': {
+      const payload: TaskPayload = { task_id: randomUUID(), description: arg };
+      return {
+        output: 'sent to orchestrator',
+        toOrchestrator: {
+          id: randomUUID(),
+          from: 'user',
+          to: 'orchestrator',
+          type: 'TASK',
+          ts: new Date().toISOString(),
+          payload,
+        },
+      };
+    }
+    case '/stop':
+    case '/undo':
+      return out(`${cmd}: не реализовано в этом PR — зависит от spec_plan_execution/spec_git_checkpoints (PR-8)`);
+    default:
+      return out(`unknown command: ${cmd}`);
+  }
+}

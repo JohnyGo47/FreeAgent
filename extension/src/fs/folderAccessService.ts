@@ -1,5 +1,6 @@
 // FolderAccessService — единственный владелец FSA-хэндла корня проекта (ARCHITECTURE §4, spec_fs_folder_access).
 // Ни один другой модуль не должен вызывать showDirectoryPicker/handle.getDirectoryHandle напрямую.
+import { STRUCTURE_FILES, STRUCTURE_DIRS } from '../../../shared/bus-structure.ts';
 
 export interface HandleStore {
   get(key: string): Promise<FileSystemDirectoryHandle | undefined>;
@@ -17,18 +18,6 @@ function toFolderAccessError(err: unknown): Error {
   if (err instanceof DOMException && err.name === 'NotAllowedError') return new FolderAccessLost();
   return err instanceof Error ? err : new Error(String(err));
 }
-
-// 6 файлов + 6 директорий = 12 позиций структуры (spec_fs_folder_access, тест 6).
-const STRUCTURE_FILES = [
-  'message_bus.jsonl',
-  'freeagent.config.json',
-  'agents_registry.json',
-  'llm_adapter_registry.json',
-  'selector_overrides.json',
-  'checkpoints.json',
-] as const;
-
-const STRUCTURE_DIRS = ['incoming', 'commands', 'cursors', 'memory', 'skills', 'logs'] as const;
 
 const STORE_KEY = 'projectRoot';
 

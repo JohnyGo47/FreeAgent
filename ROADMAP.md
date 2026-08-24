@@ -43,7 +43,7 @@
 | spec_message_bus_write | PR-1 + PR-2 | Tier 2 (CLI-мерж) в PR-1; Tier 1 (offscreen-писатель в incoming/) в PR-2 |
 | spec_message_bus_read | PR-1 + PR-2 | NodeFsSource в PR-1; FsaSource в PR-2 |
 
-**Не уводить эти две спеки в `specs/done/` до конца PR-2** — после PR-1 они реализованы наполовину. Это единственные многоэтапные спеки в проекте (проверено по всем зависимостям).
+PR-2 завершён (integration check "расширение пишет в incoming → Node читает" зелёный) — обе спеки в `specs/done/`.
 
 ## Порядок PR
 
