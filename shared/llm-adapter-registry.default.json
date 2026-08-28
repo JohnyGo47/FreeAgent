@@ -1,0 +1,207 @@
+{
+  "registry_version": 1,
+  "default": {
+    "selectors": {
+      "input": ["textarea", "[contenteditable=\"true\"]"],
+      "submit": ["button[type=\"submit\"]"],
+      "response_container": ["main"],
+      "typing_indicator": null
+    },
+    "failure_patterns": {
+      "unavailable": ["service unavailable", "temporarily unavailable", "try again later"],
+      "rate_limited": ["rate limit", "too many requests", "usage limit reached"],
+      "context_full": ["conversation is too long", "message is too long", "context length exceeded"]
+    },
+    "context_window": 8000,
+    "max_retries": 3
+  },
+  "adapters": {
+    "claude.ai": {
+      "domain": "claude.ai",
+      "selectors": {
+        "input": ["div[contenteditable=\"true\"].ProseMirror"],
+        "submit": ["button[aria-label=\"Send Message\"]"],
+        "response_container": ["div.font-claude-message"],
+        "typing_indicator": ["button[aria-label=\"Stop Response\"]"]
+      },
+      "failure_patterns": {
+        "unavailable": ["Claude is currently unavailable", "server disruption"],
+        "rate_limited": ["rate limit exceeded", "message limit reached"],
+        "context_full": ["conversation is too long"]
+      },
+      "context_window": 200000,
+      "max_retries": 3,
+      "needs_auth": true
+    },
+    "gemini.google.com": {
+      "domain": "gemini.google.com",
+      "selectors": {
+        "input": ["div.ql-editor[contenteditable=\"true\"]"],
+        "submit": ["button.send-button"],
+        "response_container": ["message-content"],
+        "typing_indicator": ["div.loading-indicator"]
+      },
+      "failure_patterns": {
+        "unavailable": ["something went wrong", "service is not available"],
+        "rate_limited": ["you've reached your limit"],
+        "context_full": ["this conversation is too long"]
+      },
+      "context_window": 32000,
+      "max_retries": 3,
+      "needs_auth": true
+    },
+    "chatgpt.com": {
+      "domain": "chatgpt.com",
+      "selectors": {
+        "input": ["div#prompt-textarea[contenteditable=\"true\"]"],
+        "submit": ["button[data-testid=\"send-button\"]"],
+        "response_container": ["div[data-message-author-role=\"assistant\"]"],
+        "typing_indicator": ["button[data-testid=\"stop-button\"]"]
+      },
+      "failure_patterns": {
+        "unavailable": ["ChatGPT is at capacity", "something went wrong"],
+        "rate_limited": ["you've hit the rate limit", "message limit reached"],
+        "context_full": ["this is a long conversation"]
+      },
+      "context_window": 32000,
+      "max_retries": 3,
+      "needs_auth": true
+    },
+    "copilot.microsoft.com": {
+      "domain": "copilot.microsoft.com",
+      "selectors": {
+        "input": ["textarea#userInput"],
+        "submit": ["button[title=\"Submit\"]"],
+        "response_container": ["div.ac-textBlock"],
+        "typing_indicator": ["div.typing-indicator"]
+      },
+      "failure_patterns": {
+        "unavailable": ["having trouble responding"],
+        "rate_limited": ["you've reached the limit"],
+        "context_full": ["let's start a new topic"]
+      },
+      "context_window": 16000,
+      "max_retries": 3,
+      "needs_auth": true
+    },
+    "grok.com": {
+      "domain": "grok.com",
+      "selectors": {
+        "input": ["textarea[aria-label=\"Ask Grok anything\"]"],
+        "submit": ["button[aria-label=\"Submit\"]"],
+        "response_container": ["div.message-bubble"],
+        "typing_indicator": ["div.generating-indicator"]
+      },
+      "failure_patterns": {
+        "unavailable": ["grok is unavailable", "something went wrong"],
+        "rate_limited": ["rate limit reached"],
+        "context_full": ["conversation too long"]
+      },
+      "context_window": 128000,
+      "max_retries": 3,
+      "needs_auth": true
+    },
+    "chat.mistral.ai": {
+      "domain": "chat.mistral.ai",
+      "selectors": {
+        "input": ["textarea[placeholder]"],
+        "submit": ["button[type=\"submit\"]"],
+        "response_container": ["div.prose"],
+        "typing_indicator": null
+      },
+      "failure_patterns": {
+        "unavailable": ["service unavailable"],
+        "rate_limited": ["quota exceeded"],
+        "context_full": ["conversation is too long"]
+      },
+      "context_window": 32000,
+      "max_retries": 3,
+      "needs_auth": true
+    },
+    "huggingface.co": {
+      "domain": "huggingface.co",
+      "selectors": {
+        "input": ["textarea[name=\"message\"]"],
+        "submit": ["button[type=\"submit\"]"],
+        "response_container": ["div.prose"],
+        "typing_indicator": ["div.animate-pulse"]
+      },
+      "failure_patterns": {
+        "unavailable": ["model is unavailable", "internal server error"],
+        "rate_limited": ["exceeded your usage quota"],
+        "context_full": ["context length exceeded"]
+      },
+      "context_window": 8000,
+      "max_retries": 3,
+      "needs_auth": true
+    },
+    "perplexity.ai": {
+      "domain": "perplexity.ai",
+      "selectors": {
+        "input": ["textarea[placeholder=\"Ask anything...\"]"],
+        "submit": ["button[aria-label=\"Submit\"]"],
+        "response_container": ["div.prose"],
+        "typing_indicator": ["div.animate-pulse"]
+      },
+      "failure_patterns": {
+        "unavailable": ["something went wrong"],
+        "rate_limited": ["you've reached your search limit"],
+        "context_full": ["thread is too long"]
+      },
+      "context_window": 32000,
+      "max_retries": 3,
+      "needs_auth": true
+    },
+    "chat.deepseek.com": {
+      "domain": "chat.deepseek.com",
+      "selectors": {
+        "input": ["textarea#chat-input"],
+        "submit": ["div[role=\"button\"][aria-label=\"Send\"]"],
+        "response_container": ["div.ds-markdown"],
+        "typing_indicator": ["div.ds-loading"]
+      },
+      "failure_patterns": {
+        "unavailable": ["server is busy"],
+        "rate_limited": ["rate limit"],
+        "context_full": ["conversation is too long"]
+      },
+      "context_window": 32000,
+      "max_retries": 3,
+      "needs_auth": true
+    },
+    "chat.qwen.ai": {
+      "domain": "chat.qwen.ai",
+      "selectors": {
+        "input": ["textarea#chat-input"],
+        "submit": ["button[type=\"submit\"]"],
+        "response_container": ["div.markdown-content"],
+        "typing_indicator": ["div.loading-dots"]
+      },
+      "failure_patterns": {
+        "unavailable": ["service unavailable", "服务不可用"],
+        "rate_limited": ["rate limit", "请求过于频繁"],
+        "context_full": ["too long", "对话过长"]
+      },
+      "context_window": 32000,
+      "max_retries": 3,
+      "needs_auth": true
+    },
+    "kimi.moonshot.cn": {
+      "domain": "kimi.moonshot.cn",
+      "selectors": {
+        "input": ["textarea.chat-input-editor"],
+        "submit": ["div.send-button"],
+        "response_container": ["div.markdown-container"],
+        "typing_indicator": ["div.loading"]
+      },
+      "failure_patterns": {
+        "unavailable": ["service unavailable", "服务暂时不可用"],
+        "rate_limited": ["rate limit", "使用次数已达上限"],
+        "context_full": ["conversation too long", "对话过长"]
+      },
+      "context_window": 200000,
+      "max_retries": 3,
+      "needs_auth": true
+    }
+  }
+}
