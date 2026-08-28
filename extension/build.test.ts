@@ -33,6 +33,11 @@ test('esbuild собирает 4 бандла, /shared импортируетс�
     for (const name of ['background', 'content', 'popup', 'offscreen']) {
       const content = await readFile(join(outdir, `${name}.js`), 'utf8');
       assert.ok(content.length > 0, `${name}.js is empty`);
+      // spec_init_agent: реестр агентов пишет только CLI, расширение — никогда (ARCHITECTURE §2).
+      // Имя файла agents_registry.json легитимно попадает в бандл как часть STRUCTURE_FILES
+      // (shared/bus-structure.ts, нужно для создания структуры папки) — проверяем отсутствие
+      // самой функции-писателя, а не имени файла.
+      assert.ok(!content.includes('saveRegistry'), `${name}.js must not bundle the registry writer (saveRegistry)`);
     }
 
     const background = await readFile(join(outdir, 'background.js'), 'utf8');

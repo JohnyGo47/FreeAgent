@@ -11,6 +11,7 @@ export interface RegisteredAgent {
   status: AgentStatus;
   name?: string;
   is_backup_for?: string;
+  registered_at?: string; // ISO, для отсчёта таймаута READY при INITIALIZING (spec_init_agent)
 }
 
 export type AgentsRegistry = Record<string, RegisteredAgent>;

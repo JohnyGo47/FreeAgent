@@ -5,10 +5,11 @@ import { parseBusLine } from '../../../shared/bus-types/index.ts';
 import { makeBatchFromContent } from '../../../shared/bus-source.ts';
 import type { BusWriter } from '../bus/write.ts';
 import type { AgentsRegistry } from '../registry/registry.ts';
-import { loadConfig } from '../config/config.ts';
+import { loadConfig, type FreeAgentConfig } from '../config/config.ts';
 import { scanIncoming } from './mergeIncoming.ts';
 import { route, flushBuffered, type Delivery } from './router.ts';
-import { applyMessageToRegistry, handleFsCall } from './applyMessage.ts';
+import { applyMessageToRegistry, handleFsCall, handleRegisterRequest } from './applyMessage.ts';
+import { checkInitTimeouts } from '../agents/initAgent.ts';
 import type { BusMessage } from '../../../shared/bus-types/index.ts';
 
 export interface MainLoopState {
@@ -28,7 +29,11 @@ export async function runMainLoopOnce(
   const batch = makeBatchFromContent(content);
 
   const commands: Delivery[] = [];
-  let fsRoot: string | undefined;
+  let cachedConfig: FreeAgentConfig | undefined;
+  const getConfig = async (): Promise<FreeAgentConfig> => {
+    if (cachedConfig === undefined) cachedConfig = (await loadConfig(freeagentDir)).config;
+    return cachedConfig;
+  };
 
   for (const line of batch.linesAfter(state.cursor)) {
     state.cursor = line.position;
@@ -42,10 +47,8 @@ export async function runMainLoopOnce(
     }
 
     if (msg.type === 'FS_CALL') {
-      if (fsRoot === undefined) {
-        const { config } = await loadConfig(freeagentDir);
-        fsRoot = join(dirname(freeagentDir), config.project_root);
-      }
+      const config = await getConfig();
+      const fsRoot = join(dirname(freeagentDir), config.project_root);
       const reply = await handleFsCall(fsRoot, msg);
       if (reply) {
         const routedReply = route(reply, state.registry, state.buffered);
@@ -57,12 +60,27 @@ export async function runMainLoopOnce(
       continue; // FS_CALL адресован 'cli' — обычный route() ниже вернул бы пустой toCommands
     }
 
+    if (msg.type === 'REGISTER_REQUEST') {
+      const outcome = await handleRegisterRequest(freeagentDir, state.registry, msg);
+      state.registry = outcome.registry;
+      if (outcome.toCommand) commands.push(outcome.toCommand);
+      if (outcome.toBus) await writer.mergeOnce([JSON.stringify(outcome.toBus)]);
+      continue; // REGISTER_REQUEST адресован 'cli' — обычный route() ниже вернул бы пустой toCommands
+    }
+
     const routed = route(msg, state.registry, state.buffered);
     commands.push(...routed.toCommands);
     if (routed.toBus) {
       await writer.mergeOnce([JSON.stringify(routed.toBus)]);
     }
   }
+
+  // Таймаут ожидания READY (spec_init_agent): INITIALIZING дольше init_timeout_ms → INIT_FAILED.
+  if (Object.values(state.registry).some((a) => a.status === 'INITIALIZING')) {
+    const config = await getConfig();
+    state.registry = checkInitTimeouts(state.registry, Date.now(), config.init_timeout_ms);
+  }
+
   return { commands };
 }
 
