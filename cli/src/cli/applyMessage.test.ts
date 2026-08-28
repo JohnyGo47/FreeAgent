@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyMessageToRegistry } from './applyMessage.ts';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { applyMessageToRegistry, handleFsCall } from './applyMessage.ts';
 import type { AgentsRegistry } from '../registry/registry.ts';
 import type { BusMessage } from '../../../shared/bus-types/index.ts';
 
@@ -31,4 +34,28 @@ test('unrelated message types leave the registry unchanged', () => {
   const before = registry();
   const updated = applyMessageToRegistry(msg('orchestrator', 'TASK'), before);
   assert.deepEqual(updated, before);
+});
+
+test('handleFsCall: FS_CALL runs through the fs pipeline and replies FS_RESULT to the caller', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'freeagent-fscall-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  const call = msg('coder1', 'FS_CALL');
+  call.payload = '[FS | op: write | path: notes.md | kind: doc | end: ---FS_END---]\nhello\n---FS_END---';
+
+  const reply = await handleFsCall(root, call);
+  assert.ok(reply);
+  assert.equal(reply?.from, 'cli');
+  assert.equal(reply?.to, 'coder1');
+  assert.equal(reply?.type, 'FS_RESULT');
+  assert.match(reply?.payload as string, /\[FS_RESULT\]/);
+  assert.match(reply?.payload as string, /"ok":true/);
+
+  const written = await readFile(join(root, 'notes.md'), 'utf8');
+  assert.equal(written, 'hello');
+});
+
+test('handleFsCall: non-FS_CALL message is not handled here', async () => {
+  const reply = await handleFsCall('unused', msg('coder1', 'TASK'));
+  assert.equal(reply, null);
 });

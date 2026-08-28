@@ -1,5 +1,5 @@
 # Spec: message_bus_types
-# Version: 2.1 — ACTIVE убран из AgentStatus, id в конверте, HANDOFF удалён
+# Version: 2.2 — FS_CALL/FS_RESULT добавлены (микро-PR перед PR-5, проводка [FS] через шину)
 # Читать вместе с ARCHITECTURE.md (§4 шина, §2 компоненты)
 
 ## Goal
@@ -10,7 +10,7 @@
 
 ## Contract
 
-### MessageType — 17 типов, закрытый union
+### MessageType — 19 типов, закрытый union
 ```typescript
 export type MessageType =
   // задачи и результаты
@@ -18,7 +18,7 @@ export type MessageType =
   // жизненный цикл агента
   | 'READY' | 'REGISTER_REQUEST' | 'TAB_STATE' | 'HEARTBEAT'
   // файлы
-  | 'WRITE' | 'READ' | 'TESTS_READY'
+  | 'WRITE' | 'READ' | 'TESTS_READY' | 'FS_CALL' | 'FS_RESULT'
   // планирование
   | 'PLAN' | 'PLAN_REVISED' | 'APPROVED'
   // здоровье
@@ -32,6 +32,8 @@ export type MessageType =
 **`HEARTBEAT` — от расширения к CLI, один на инстанс.** Не от агента (см. ARCHITECTURE §6).
 
 **`STATUS` — выводит CLI** из тайминга TASK/RESULT (ARCHITECTURE §12); агент его не шлёт — модель по своей инициативе сообщений не отправляет (§6).
+
+**`FS_CALL`/`FS_RESULT` — [FS]-вызов агента и его результат, как обычный `BusMessage`** (микро-PR перед PR-5, `spec_file_access`). Heredoc-тело `[FS]`-вызова едет **строкой** в `payload` — браузер его не парсит (content script кладёт сырой блок от модели как есть), разбирает только `parseFsCall` в CLI. `FS_RESULT` адресуется обратно вызвавшему агенту (`to` = его `agent_id`) тем же маршрутом, что любой адресный `BusMessage` — новый канал не заводится.
 
 ### Конверт
 ```typescript
@@ -66,6 +68,8 @@ export interface NotifyPayload    { event: string; agent_id?: string; details?: 
 export interface ErrorPayload     { message: string; context?: string; valid_agents?: string[]; }
 ```
 
+`FS_CALL`/`FS_RESULT` не заводят собственный payload-тип — их `payload` это `string` (heredoc-текст `[FS|...]` / рендер `[FS_RESULT]...[/FS_RESULT]`), парсится `parseFsCall`/`dispatch` в CLI (`spec_file_access`), не типами шины.
+
 ### AgentStatus — единственное определение в проекте
 ```typescript
 export type AgentStatus =
@@ -96,6 +100,8 @@ export function fromTagFormat(text: string): BusMessage[];
 ```
 `fromTagFormat` обязан переживать: лишний текст вокруг блока, markdown-обёртку (```), несколько блоков в одном ответе, незакрытый тег в конце (warning + парсить до конца текста). **Это первый рубеж против главного риска проекта — непредсказуемого форматирования бесплатных LLM.**
 
+> **Правка v2.2.** Markdown-заборы больше не вырезаются глобально по всему тексту перед поиском тегов — поиск `[MSG|...]`/`[/MSG]` их и так игнорирует (независимые структуры), а глобальная вырезка молча портила `payload`, когда он сам легитимно содержал тройные бэктики (найдено при проводке `FS_CALL`/`FS_RESULT`, у которых `payload` — произвольная строка, а не только JSON-данные). Markdown-обёртка *вокруг* блока по-прежнему не мешает извлечению — она никогда и не требовала вырезки для этого.
+
 `id` и `seq` в тег-текст **не попадают** — это плумбинг шины, не данные для модели: `seq` присваивает CLI при мерже, `id` — отправитель при создании (для блоков из ответа LLM — расширение при разборе). Поэтому round-trip тег-формата сохраняет `from`/`to`/`type`/`payload`, но не `id`/`seq`.
 
 ## Dependencies
@@ -103,7 +109,7 @@ export function fromTagFormat(text: string): BusMessage[];
 
 ## Tests
 ### Unit
-1. Валидное сообщение каждого из 17 типов парсится
+1. Валидное сообщение каждого из 19 типов парсится
 2. Битые строки (не-JSON, без `id`, без `from`, неизвестный `type`, кривой `ts`) → `{ok:false}` без исключений
 3. Round-trip `fromTagFormat(toTagFormat(msg))` эквивалентен исходному по `from`/`to`/`type`/`payload` (`id`/`seq` присваиваются на границах шины и в тег не входят)
 4. `fromTagFormat`: мусор вокруг тегов, markdown-обёртка, два блока в одном тексте — все извлечены

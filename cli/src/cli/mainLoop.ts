@@ -1,13 +1,14 @@
 // Главный цикл CLI (spec_cli §"Главный цикл"): merge → маршрутизация → обновление реестра.
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { parseBusLine } from '../../../shared/bus-types/index.ts';
 import { makeBatchFromContent } from '../../../shared/bus-source.ts';
 import type { BusWriter } from '../bus/write.ts';
 import type { AgentsRegistry } from '../registry/registry.ts';
+import { loadConfig } from '../config/config.ts';
 import { scanIncoming } from './mergeIncoming.ts';
 import { route, flushBuffered, type Delivery } from './router.ts';
-import { applyMessageToRegistry } from './applyMessage.ts';
+import { applyMessageToRegistry, handleFsCall } from './applyMessage.ts';
 import type { BusMessage } from '../../../shared/bus-types/index.ts';
 
 export interface MainLoopState {
@@ -27,6 +28,8 @@ export async function runMainLoopOnce(
   const batch = makeBatchFromContent(content);
 
   const commands: Delivery[] = [];
+  let fsRoot: string | undefined;
+
   for (const line of batch.linesAfter(state.cursor)) {
     state.cursor = line.position;
     const parsed = parseBusLine(line.text);
@@ -36,6 +39,22 @@ export async function runMainLoopOnce(
     state.registry = applyMessageToRegistry(msg, state.registry);
     if (msg.type === 'READY' && state.registry[msg.from]?.status === 'IDLE') {
       commands.push(...flushBuffered(msg.from, state.registry, state.buffered));
+    }
+
+    if (msg.type === 'FS_CALL') {
+      if (fsRoot === undefined) {
+        const { config } = await loadConfig(freeagentDir);
+        fsRoot = join(dirname(freeagentDir), config.project_root);
+      }
+      const reply = await handleFsCall(fsRoot, msg);
+      if (reply) {
+        const routedReply = route(reply, state.registry, state.buffered);
+        commands.push(...routedReply.toCommands);
+        if (routedReply.toBus) {
+          await writer.mergeOnce([JSON.stringify(routedReply.toBus)]);
+        }
+      }
+      continue; // FS_CALL адресован 'cli' — обычный route() ниже вернул бы пустой toCommands
     }
 
     const routed = route(msg, state.registry, state.buffered);

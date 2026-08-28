@@ -4,7 +4,7 @@ import { log } from '../log.ts';
 export const MESSAGE_TYPES = [
   'TASK', 'RESULT', 'STATUS',
   'READY', 'REGISTER_REQUEST', 'TAB_STATE', 'HEARTBEAT',
-  'WRITE', 'READ', 'TESTS_READY',
+  'WRITE', 'READ', 'TESTS_READY', 'FS_CALL', 'FS_RESULT',
   'PLAN', 'PLAN_REVISED', 'APPROVED',
   'RESPONSE_HEALTH',
   'NOTIFY', 'COMMAND', 'ERROR',
@@ -118,7 +118,12 @@ const OPEN_TAG_RE = /\[MSG\s*\|([\s\S]*?)\]/g;
 const CLOSE_TAG = '[/MSG]';
 
 export function fromTagFormat(text: string): BusMessage[] {
-  const cleaned = text.replace(/```[a-zA-Z]*\r?\n?/g, '').replace(/```/g, '');
+  // Раньше здесь глобально вырезались markdown-заборы (```) по всему тексту — задумывалось
+  // как защита от LLM, оборачивающих блок в ```, но заборы не мешают поиску [MSG]/[/MSG]
+  // (независимые структуры), а вот payload внутри блока эта чистка молча портила, если тело
+  // само легитимно содержало тройные бэктики (например, код с markdown-фрагментом внутри).
+  // Найдено при проводке [FS_CALL]/[FS_RESULT] через штатную [MSG]-обёртку.
+  const cleaned = text;
   const results: BusMessage[] = [];
 
   OPEN_TAG_RE.lastIndex = 0;

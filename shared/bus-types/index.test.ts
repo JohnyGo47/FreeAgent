@@ -21,13 +21,13 @@ function makeMsg(overrides: Partial<BusMessage> = {}): BusMessage {
   };
 }
 
-test('valid message of each of the 17 types parses', () => {
+test('valid message of each of the 19 types parses', () => {
   for (const type of MESSAGE_TYPES) {
     const line = JSON.stringify(makeMsg({ type }));
     const result = parseBusLine(line);
     assert.equal(result.ok, true, `type ${type} should parse`);
   }
-  assert.equal(MESSAGE_TYPES.length, 17);
+  assert.equal(MESSAGE_TYPES.length, 19);
 });
 
 test('broken lines fail without throwing', () => {

@@ -57,6 +57,9 @@ LLM часто оборачивают ответ в markdown: ` ```\n[MSG|...]\n
 - Не инжектировать, пока предыдущий ответ не завершён (одна очередь на вкладку)
 - `toTagFormat` и `fromTagFormat` импортируются из `/shared/bus-types` — content script не дублирует конвертацию
 
+### Проводка [FS]/[FS_RESULT] через шину (микро-PR перед PR-5)
+Тело `[FS|...]`-вызова браузер **не парсит**: content script кладёт сырой heredoc-блок от модели в `payload` `BusMessage` типа `FS_CALL` как есть, строкой. Разбирает его только `parseFsCall` в CLI (`spec_file_access`) — здесь, как и во всей шине, действует одно правило: тег-слой payload возит, но не читает. `FS_RESULT` возвращается **вызвавшему агенту** через `commands/<instance_id>` и инжектится в DOM тем же механизмом, что любая команда агенту (§ Инжект выше) — не широковещательно и не напрямую из CLI.
+
 ## Dependencies
 `spec_message_bus_types` (конвертеры), `spec_llm_adapter_registry` (селекторы), `spec_selector_resilience` (fallback-цепочки — **PR-6**; в PR-4 резолв простым перебором, см. заметку), `spec_response_complete_detection` (когда ответ готов), `spec_ext_manifest` (content script контекст)
 
