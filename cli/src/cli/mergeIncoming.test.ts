@@ -49,3 +49,21 @@ test('re-scanning the same unchanged incoming files does not duplicate entries (
   const busLines = (await readFile(busPath, 'utf8')).split('\n').filter((l) => l.length > 0);
   assert.equal(busLines.length, 1);
 });
+
+test('incoming truncate после успешного мержа: файл пуст, следующее чтение начинается с чистого листа (spec_bus_rotation)', async (t) => {
+  const dir = await tmpDir();
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const incomingDir = join(dir, 'incoming');
+  await mkdir(incomingDir, { recursive: true });
+  const filePath = join(incomingDir, 'browser_a.jsonl');
+  await writeFile(filePath, line('a-1', 'browser_a') + '\n', 'utf8');
+
+  const writer = await BusWriter.create(join(dir, 'message_bus.jsonl'));
+  await scanIncoming(incomingDir, writer);
+  assert.equal(await readFile(filePath, 'utf8'), '');
+
+  // "курсор сброшен в 0": новая запись в тот же файл после truncate мержится с нуля, не считается дублем.
+  await writeFile(filePath, line('a-2', 'browser_a') + '\n', 'utf8');
+  const { appended } = await scanIncoming(incomingDir, writer);
+  assert.equal(appended, 1);
+});

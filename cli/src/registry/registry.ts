@@ -12,6 +12,11 @@ export interface RegisteredAgent {
   name?: string;
   is_backup_for?: string;
   registered_at?: string; // ISO, для отсчёта таймаута READY при INITIALIZING (spec_init_agent)
+  attempts?: number; // recovery-попытки подряд (spec_agent_recovery), сбрасывается на успешный READY
+  service_unavailable_attempts?: number; // backoff-попытки при "unavailable" (spec_response_health), независим от attempts
+  service_down_since?: string; // ISO, момент входа в SERVICE_DOWN — точка отсчёта backoff
+  no_tags_attempts?: number; // счётчик переспросов формата (spec_response_health)
+  switching_step?: 'memory_requested' | 'activating_backup'; // фаза переключения на бэкап (spec_backup_agents)
 }
 
 export type AgentsRegistry = Record<string, RegisteredAgent>;

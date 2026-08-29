@@ -4,7 +4,9 @@
 
 export interface BusLine {
   text: string;
-  position: number; // ponytail: индекс в строке файла, не байтовый offset — весь файл перечитывается на каждом тике, ротация (spec_bus_rotation) сделает это неверным допущением
+  position: number; // индекс в строке файла — годится для incoming/commands (spec_bus_rotation:
+  // они не ротируются, incoming truncate'ится вместо ротации). Курсор ГЛАВНОЙ шины ротацию не
+  // переживает по позиции — mainLoop.ts читает её по seq напрямую, минуя этот интерфейс.
 }
 
 export interface Batch {

@@ -21,6 +21,7 @@ export interface FreeAgentConfig {
   checkpoint_branch: boolean;
   registry_url: string;
   registry_check_hours: number;
+  bus_rotation_threshold_bytes: number; // spec_bus_rotation: порог ротации message_bus.jsonl
   known_instances: Record<string, KnownInstance>;
   project_id?: string;
   [extra: string]: unknown;
@@ -40,6 +41,7 @@ export const DEFAULT_CONFIG: FreeAgentConfig = {
   checkpoint_branch: false,
   registry_url: 'https://raw.githubusercontent.com/<repo>/main/llm_adapter_registry.json',
   registry_check_hours: 24,
+  bus_rotation_threshold_bytes: 5 * 1024 * 1024,
   known_instances: {},
 };
 
