@@ -5,8 +5,17 @@ import { Box, Text, useInput } from 'ink';
 import type { AgentsRegistry } from '../registry/registry.ts';
 import { runReplCommand, type ReplContext, type ReplResult } from '../cli/replCommands.ts';
 import type { PlanGate } from '../cli/planMode.ts';
+import type { FreeAgentConfig } from '../config/config.ts';
 
 const h = React.createElement;
+
+// spec_git_checkpoints задача B.13: "не-git проект — при отказе чекпоинты отключены, ПОСТОЯННЫЙ
+// warning в TUI (не молчать)". Чистая функция — тестируется без ink render harness; init.ts
+// персистирует git_checkpoints:false, поэтому баннер переживает рестарт CLI, не только текущую
+// сессию (в отличие от разового console.warn в cmdInit).
+export function checkpointsWarning(config: FreeAgentConfig): string | null {
+  return config.git_checkpoints === false ? 'WARNING: git-чекпоинты отключены — /undo недоступен, изменения агентов не автокоммитятся' : null;
+}
 
 export interface AppProps {
   getContext: () => ReplContext;
@@ -80,11 +89,13 @@ export function App({ getContext, onResult, getGate, onApprovePlan, onCancelPlan
   // Индикатор режима — постоянный, не только во время активного гейта (spec_cli_plan_mode
   // constraint "yolo... постоянный индикатор в statusbar").
   const modeLabel = gate.status === 'yolo' || getContext().config.mode === 'yolo' ? 'YOLO' : 'PLAN';
+  const warning = checkpointsWarning(getContext().config);
 
   return h(
     Box,
     { flexDirection: 'column' },
     h(Text, { bold: true }, `FreeAgent [${modeLabel}]`),
+    warning ? h(Text, { key: 'checkpoints-warning', color: 'red' }, warning) : null,
     ...rows,
     ...renderPlan(gate),
     h(Text, { dimColor: true }, lastOutput),

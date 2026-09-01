@@ -109,6 +109,9 @@ export async function runInit(projectRoot: string, opts: InitOptions = {}): Prom
   const projectId = randomUUID();
   const { config } = await loadConfig(freeagentDir);
   config.project_id = projectId;
+  // git_checkpoints:false персистируется (не только checkpointsDisabledWarning из этого вызова
+  // init) — задача B.13 требует ПОСТОЯННОГО warning в TUI между сессиями, не только в момент init.
+  if (checkpointsDisabledWarning) config.git_checkpoints = false;
   await saveConfig(freeagentDir, config);
 
   return { alreadyInitialized: false, projectId, gitInitialized, checkpointsDisabledWarning };

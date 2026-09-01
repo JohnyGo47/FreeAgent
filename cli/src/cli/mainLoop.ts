@@ -1,4 +1,5 @@
 // Главный цикл CLI (spec_cli §"Главный цикл"): merge → маршрутизация → обновление реестра.
+import { randomUUID } from 'node:crypto';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { parseBusLine } from '../../../shared/bus-types/index.ts';
@@ -33,9 +34,14 @@ import {
   applyOwnershipViolation,
   dedupeStatus,
   currentStepFilesForAgent,
+  currentTaskIdForAgent,
+  recordTestsReady,
+  recordWrittenFile,
   planCompleteNotify,
   escalationNotify,
 } from './planExecution.ts';
+import { loadCheckpoints, saveCheckpoints, preTaskCheckpoint, doneCheckpoint, isGitRepo, type CheckpointEntry } from './gitCheckpoints.ts';
+import type { NotifyPayload, ResultPayload } from '../../../shared/bus-types/index.ts';
 
 export interface MainLoopState {
   registry: AgentsRegistry;
@@ -58,6 +64,53 @@ function dispatchPlanTasks(execution: PlanExecutionState, registry: AgentsRegist
     commands.push(...routed.toCommands);
   }
   return round.state;
+}
+
+// unverified виден пользователю, не выдаётся за проверенный (spec_verification задача A.4) —
+// self-NOTIFY (to:'cli', как planViolationNotify) + прямой вывод в терминал CLI, не только /log.
+function unverifiedNotify(stepId: number, agentId: string): BusMessage {
+  const payload: NotifyPayload = { event: 'STEP_UNVERIFIED', agent_id: agentId, details: `step ${stepId} closed without TESTS_READY — unverified` };
+  return { id: randomUUID(), from: 'cli', to: 'cli', type: 'NOTIFY', ts: new Date().toISOString(), payload };
+}
+
+// git_checkpoints (задача B.13): чекпоинты выключены явно (`git_checkpoints: false` в конфиге,
+// init.ts ставит это, когда пользователь отказался от `git init`) или .git физически отсутствует
+// (проект переехал/git удалили руками после init) — в обоих случаях пропускаем молча здесь,
+// TUI показывает постоянный warning из конфига отдельно (App.ts).
+async function checkpointsEnabled(fsRoot: string, config: FreeAgentConfig): Promise<boolean> {
+  if (config.git_checkpoints === false) return false;
+  return isGitRepo(fsRoot);
+}
+
+// Первый WRITE в рамках task_id -> pre-task коммит-маркер (задача B.8). checkpoints.json —
+// источник истины "уже был ли pre-task для этого task_id" (переживает рестарт CLI, не только
+// in-memory состояние тика).
+async function ensurePreTaskCheckpoint(freeagentDir: string, fsRoot: string, taskId: string, files: string[]): Promise<void> {
+  const entries = await loadCheckpoints(freeagentDir);
+  if (entries.some((e) => e.task_id === taskId)) return;
+  const outcome = await preTaskCheckpoint(fsRoot, taskId);
+  if ('error' in outcome) {
+    log.warn(`git_checkpoints: pre-task ${taskId} failed: ${outcome.error}`);
+    return;
+  }
+  const entry: CheckpointEntry = { task_id: taskId, files, pre_task_commit: outcome.hash, ts: new Date().toISOString() };
+  await saveCheckpoints(freeagentDir, [...entries, entry]);
+}
+
+// RESULT: DONE после успешной верификации -> done-коммит (задача B.8), обновляет ту же запись
+// checkpoints.json, которую завела ensurePreTaskCheckpoint.
+async function ensureDoneCheckpoint(freeagentDir: string, fsRoot: string, taskId: string, files: string[], summary: string): Promise<void> {
+  const entries = await loadCheckpoints(freeagentDir);
+  const idx = entries.findIndex((e) => e.task_id === taskId);
+  if (idx === -1) return; // не было pre-task (например, WRITE так и не случился) — нечего закрывать
+  const outcome = await doneCheckpoint(fsRoot, taskId, files, summary);
+  if ('error' in outcome) {
+    log.warn(`git_checkpoints: done-commit ${taskId} failed: ${outcome.error}`);
+    return;
+  }
+  const updated = [...entries];
+  updated[idx] = { ...updated[idx], done_commit: outcome.hash, summary };
+  await saveCheckpoints(freeagentDir, updated);
 }
 
 export async function runMainLoopOnce(
@@ -125,7 +178,8 @@ export async function runMainLoopOnce(
       const config = await getConfig();
       const fsRoot = join(dirname(freeagentDir), config.project_root);
       const modelText = typeof msg.payload === 'string' ? msg.payload : '';
-      const isWriteLike = parseFsCall(modelText).calls.some((c) => c.args.op === 'write' || c.args.op === 'edit');
+      const { calls } = parseFsCall(modelText);
+      const isWriteLike = calls.some((c) => c.args.op === 'write' || c.args.op === 'edit');
 
       // Enforcement на стороне CLI (spec_cli_plan_mode задача A.3): WRITE/EDIT до APPROVED по
       // текущей задаче -> агент на паузу, пользователь уведомлён. Не полагаемся на дисциплину
@@ -141,11 +195,26 @@ export async function runMainLoopOnce(
       const ownedFiles = state.execution ? currentStepFilesForAgent(state.execution, msg.from) : undefined;
       const reply = await handleFsCall(fsRoot, msg, ownedFiles);
       if (reply) {
+        const succeeded = typeof reply.payload === 'string' && reply.payload.includes('"ok":true');
         if (isWriteLike && state.execution && ownedFiles && typeof reply.payload === 'string' && reply.payload.includes('"code":"FILE_NOT_OWNED"')) {
           const violation = applyOwnershipViolation(state.execution, msg.from, modelText);
           state.execution = violation.state;
           if (violation.event.kind === 'escalate') {
             await writer.mergeOnce([JSON.stringify(escalationNotify(violation.event.reason))]);
+          }
+        } else if (isWriteLike && succeeded && state.execution) {
+          // Успешный write/edit в рамках шага плана — учесть для verification (задача A.3:
+          // "файл всё ещё на диске" на RESULT:DONE) и завести/продолжить git-чекпоинт задачи
+          // (задача B.8: первый WRITE в рамках task_id -> pre-task коммит).
+          const writtenPath = calls[0]?.args.path;
+          if (writtenPath) {
+            state.execution = recordWrittenFile(state.execution, msg.from, writtenPath);
+            const taskId = currentTaskIdForAgent(state.execution, msg.from);
+            const config = await getConfig();
+            if (taskId && (await checkpointsEnabled(fsRoot, config))) {
+              const stepFiles = currentStepFilesForAgent(state.execution, msg.from) ?? [];
+              await ensurePreTaskCheckpoint(freeagentDir, fsRoot, taskId, stepFiles);
+            }
           }
         }
         const routedReply = route(reply, state.registry, state.buffered);
@@ -155,6 +224,13 @@ export async function runMainLoopOnce(
         }
       }
       continue; // FS_CALL адресован 'cli' — обычный route() ниже вернул бы пустой toCommands
+    }
+
+    // TESTS_READY {task_id, command} — CLI запоминает команду против шага; сам прогон откладывается
+    // до RESULT:DONE (spec_verification протокол шага, spec_plan_execution контракт п.5).
+    if (msg.type === 'TESTS_READY' && state.execution) {
+      state.execution = recordTestsReady(state.execution, msg);
+      continue; // адресовано 'cli' — обычный route() ниже вернул бы пустой toCommands
     }
 
     // Новая задача от пользователя — гейт стартует здесь, но TASK всё равно должен дойти до
@@ -191,20 +267,40 @@ export async function runMainLoopOnce(
 
     // RESULT шага исполняемого плана (spec_plan_execution). На счастливом пути (progress) — 0
     // сообщений оркестратору (continue без mergeOnce); эскалация/завершение — единственные случаи,
-    // когда он вообще узнаёт про план в процессе.
+    // когда он вообще узнаёт про план в процессе. RESULT:DONE теперь реально верифицируется
+    // (spec_verification задача A.7) — applyResult зовёт verifyStep внутри, не берёт DONE на слово.
     if (msg.type === 'RESULT' && msg.to === 'orchestrator' && state.execution) {
       const config = await getConfig();
-      const outcome = applyResult(state.execution, msg, config.self_assessment_threshold);
+      const fsRoot = join(dirname(freeagentDir), config.project_root);
+      const outcome = await applyResult(state.execution, msg, config.self_assessment_threshold, {
+        cwd: fsRoot,
+        timeoutMs: config.test_timeout_ms,
+        logsDir: join(freeagentDir, 'logs'),
+      });
       state.execution = outcome.state;
 
       if (outcome.event.kind === 'escalate') {
         await writer.mergeOnce([JSON.stringify(escalationNotify(outcome.event.reason))]);
-      } else if (outcome.event.kind === 'complete') {
-        await writer.mergeOnce([JSON.stringify(planCompleteNotify())]);
-        state.execution = undefined;
-        state.gate = { ...IDLE_GATE }; // задача закрыта, гейт свободен для следующей
       } else {
-        state.execution = dispatchPlanTasks(state.execution, state.registry, state.buffered, commands);
+        // Шаг реально закрылся (progress/complete, не escalate) — done-чекпоинт (задача B.8) и,
+        // если verifyStep вернула unverified, видимая пометка пользователю (задача A.4).
+        if (outcome.step && (await checkpointsEnabled(fsRoot, config))) {
+          const payload = msg.payload as ResultPayload;
+          await ensureDoneCheckpoint(freeagentDir, fsRoot, payload.task_id, outcome.step.files, payload.summary);
+        }
+        if (outcome.unverified && outcome.step) {
+          const notice = unverifiedNotify(outcome.step.step_id, outcome.step.agent_id);
+          log.warn(`unverified: step ${outcome.step.step_id} (${outcome.step.agent_id}) closed без TESTS_READY`);
+          await writer.mergeOnce([JSON.stringify(notice)]);
+        }
+
+        if (outcome.event.kind === 'complete') {
+          await writer.mergeOnce([JSON.stringify(planCompleteNotify())]);
+          state.execution = undefined;
+          state.gate = { ...IDLE_GATE }; // задача закрыта, гейт свободен для следующей
+        } else {
+          state.execution = dispatchPlanTasks(state.execution, state.registry, state.buffered, commands);
+        }
       }
       continue;
     }

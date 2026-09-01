@@ -18,6 +18,7 @@ import { agentsStatus, recentLog } from './cli/status.ts';
 import { runReplCommand } from './cli/replCommands.ts';
 import { IDLE_GATE, approvePlan, cancelPlan, revisePlan, planToEditableText } from './cli/planMode.ts';
 import { startExecution, stopExecution } from './cli/planExecution.ts';
+import { loadCheckpoints, undoCheckpoint, undoOutcomeNotify } from './cli/gitCheckpoints.ts';
 import { App } from './tui/App.ts';
 import type { BusMessage } from '../../shared/bus-types/index.ts';
 
@@ -129,6 +130,23 @@ async function cmdStart(projectRoot: string): Promise<void> {
         }
         if (result.stopExecution && state.execution) {
           state.execution = stopExecution(state.execution);
+        }
+        if (result.undoRequest) {
+          // /undo — реальная I/O (git revert), поэтому исполняется здесь, не в runReplCommand
+          // (spec_git_checkpoints задача B.12). Исход виден через /log (undoOutcomeNotify).
+          const entries = await loadCheckpoints(freeagentDir);
+          const target = result.undoRequest.taskId
+            ? entries.find((e) => e.task_id === result.undoRequest!.taskId)
+            : [...entries].reverse().find((e) => e.done_commit);
+          if (!target) {
+            const detail = result.undoRequest.taskId ? `no checkpoint for ${result.undoRequest.taskId}` : 'no checkpoints recorded';
+            await writer.mergeOnce([JSON.stringify(undoOutcomeNotify(result.undoRequest.taskId ?? '(none)', false, detail))]);
+          } else {
+            const fsRoot = join(projectRoot, config.project_root);
+            const outcome = await undoCheckpoint(fsRoot, target);
+            const detail = outcome.ok ? 'reverted, files restored to pre-task state' : `${outcome.conflict ? 'conflict' : 'error'}: ${outcome.detail}`;
+            await writer.mergeOnce([JSON.stringify(undoOutcomeNotify(target.task_id, outcome.ok, detail))]);
+          }
         }
       },
     }),

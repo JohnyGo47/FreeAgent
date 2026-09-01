@@ -44,7 +44,15 @@ test('/stop сигнализирует остановку исполнения �
   assert.equal(result.toOrchestrator, undefined);
 });
 
-test('/undo остаётся вне рамок этого захода (зависит от spec_git_checkpoints, заход 2 PR-8) — явный отказ, не притворная реализация', () => {
+// spec_git_checkpoints задача B.12: /undo сигнализирует bin.ts (реальный git revert — I/O,
+// runReplCommand синхронна), не трогает оркестратора.
+test('/undo без аргумента: undoRequest без taskId — bin.ts откатывает последний чекпоинт', () => {
   const result = runReplCommand('/undo', ctx());
-  assert.match(result.output, /заход 2/);
+  assert.deepEqual(result.undoRequest, { taskId: undefined });
+  assert.equal(result.toOrchestrator, undefined);
+});
+
+test('/undo <task_id>: undoRequest.taskId несёт конкретную задачу', () => {
+  const result = runReplCommand('/undo task-42', ctx());
+  assert.deepEqual(result.undoRequest, { taskId: 'task-42' });
 });

@@ -4,7 +4,8 @@
 // (маршрутизация TASK через router.ts с его буферизацией переходных статусов, запись FS,
 // сохранение состояния) делает mainLoop.ts.
 import { randomUUID } from 'node:crypto';
-import type { BusMessage, NotifyPayload, PlanPayload, PlanStep, ResultPayload, StatusPayload, TaskPayload } from '../../../shared/bus-types/index.ts';
+import type { BusMessage, NotifyPayload, PlanPayload, PlanStep, ResultPayload, StatusPayload, TaskPayload, TestsReadyPayload } from '../../../shared/bus-types/index.ts';
+import { verifyStep, type VerifyParams, type VerifyVerdict } from './verification.ts';
 
 export type StepStatus = 'pending' | 'sent' | 'done' | 'failed';
 
@@ -12,6 +13,9 @@ export interface PlanExecutionState {
   plan: PlanPayload;
   stepStatus: Record<number, StepStatus>;
   taskIds: Record<number, string>; // step_id -> task_id отправленной TASK, для сопоставления RESULT
+  testsReadyCommands: Record<number, string>; // step_id -> command из TESTS_READY (задача A.3/A.7)
+  writtenFiles: Record<number, string[]>; // step_id -> файлы, реально записанные за этот шаг (FS_CALL write/edit)
+  unverifiedSteps: Set<number>; // шаги, закрытые без TESTS_READY (задача A.4) — видимо пользователю
   stopped: boolean; // /stop (задача B.13): текущие задачи дорабатывают, новые не уходят
   lastStatus: Record<string, StatusPayload['state']>; // дедуп STATUS по agent_id
 }
@@ -19,7 +23,7 @@ export interface PlanExecutionState {
 export function startExecution(plan: PlanPayload): PlanExecutionState {
   const stepStatus: Record<number, StepStatus> = {};
   for (const step of plan.steps) stepStatus[step.step_id] = 'pending';
-  return { plan, stepStatus, taskIds: {}, stopped: false, lastStatus: {} };
+  return { plan, stepStatus, taskIds: {}, testsReadyCommands: {}, writtenFiles: {}, unverifiedSteps: new Set(), stopped: false, lastStatus: {} };
 }
 
 function readySteps(state: PlanExecutionState): PlanStep[] {
@@ -77,15 +81,52 @@ function completionEvent(state: PlanExecutionState): ExecutionEvent {
   return allDone ? { kind: 'complete' } : { kind: 'progress' };
 }
 
+// TESTS_READY {task_id, command} — CLI просто запоминает команду против шага; сам запуск
+// откладывается до RESULT: DONE (applyResult ниже), где и решает, закрыт ли шаг
+// (spec_plan_execution контракт п.5, spec_verification протокол шага).
+export function recordTestsReady(state: PlanExecutionState, msg: BusMessage): PlanExecutionState {
+  if (msg.type !== 'TESTS_READY') return state;
+  const payload = msg.payload as TestsReadyPayload;
+  const step = stepForTaskId(state, payload.task_id);
+  if (!step) return state;
+  return { ...state, testsReadyCommands: { ...state.testsReadyCommands, [step.step_id]: payload.command } };
+}
+
+// Файл, реально записанный CLI (успешный FS_CALL write/edit) в рамках текущего 'sent' шага
+// агента — источник для verification'ой проверки "файл всё ещё на диске" (задача A.3) и,
+// отдельно, для git_checkpoints (не отсюда — mainLoop использует step.files напрямую там).
+export function recordWrittenFile(state: PlanExecutionState, agentId: string, path: string): PlanExecutionState {
+  const step = state.plan.steps.find((s) => s.agent_id === agentId && state.stepStatus[s.step_id] === 'sent');
+  if (!step) return state;
+  const existing = state.writtenFiles[step.step_id] ?? [];
+  if (existing.includes(path)) return state;
+  return { ...state, writtenFiles: { ...state.writtenFiles, [step.step_id]: [...existing, path] } };
+}
+
+export interface VerifyContext {
+  cwd: string;
+  timeoutMs: number;
+  logsDir: string;
+  verifyFn?: (params: VerifyParams) => Promise<VerifyVerdict>;
+}
+
 // RESULT: DONE/FAILED от агента, исполняющего текущий шаг. selfAssessmentThreshold —
-// config.self_assessment_threshold (spec_verification, задействуется здесь как второй слой отказа
-// даже при status: DONE).
-//
-// PR-8 заход 2: здесь встанет вызов verification (прогон тестов по TESTS_READY, вердикт решает
-// закрыт ли шаг). Пока громкая заглушка — RESULT: DONE закрывает шаг без прогона тестов; "красные
-// тесты" как повод эскалации (spec_plan_execution Tests #7) недоступны в этом PR, доступен только
-// механический RESULT: FAILED.
-export function applyResult(state: PlanExecutionState, msg: BusMessage, selfAssessmentThreshold: number): { state: PlanExecutionState; event: ExecutionEvent } {
+// config.self_assessment_threshold; verifyCtx — окружение для verification (задача A.7): реальный
+// прогон тестов вместо доверия DONE на слово. Порядок отказов: явный FAILED -> самооценка ниже
+// порога -> verification (белый список/exit code/таймаут/файл пропал/unverified).
+export interface ApplyResultOutcome {
+  state: PlanExecutionState;
+  event: ExecutionEvent;
+  unverified?: boolean;
+  step?: PlanStep; // шаг, к которому относился этот RESULT — mainLoop использует для checkpoint (files/summary)
+}
+
+export async function applyResult(
+  state: PlanExecutionState,
+  msg: BusMessage,
+  selfAssessmentThreshold: number,
+  verifyCtx: VerifyContext,
+): Promise<ApplyResultOutcome> {
   const payload = msg.payload as ResultPayload;
   const step = stepForTaskId(state, payload.task_id);
   if (!step) return { state, event: { kind: 'progress' } }; // RESULT не про этот план — игнор
@@ -95,6 +136,7 @@ export function applyResult(state: PlanExecutionState, msg: BusMessage, selfAsse
     return {
       state: { ...state, stepStatus },
       event: { kind: 'escalate', reason: `step ${step.step_id} (${step.agent_id}) FAILED: ${payload.summary}` },
+      step,
     };
   }
 
@@ -106,12 +148,33 @@ export function applyResult(state: PlanExecutionState, msg: BusMessage, selfAsse
         kind: 'escalate',
         reason: `step ${step.step_id} (${step.agent_id}) self-assessment ${payload.self_assessment.percent}% < ${selfAssessmentThreshold}%: ${payload.self_assessment.reasoning}`,
       },
+      step,
     };
   }
 
+  const verify = verifyCtx.verifyFn ?? verifyStep;
+  const verdict = await verify({
+    taskId: payload.task_id,
+    command: state.testsReadyCommands[step.step_id],
+    cwd: verifyCtx.cwd,
+    timeoutMs: verifyCtx.timeoutMs,
+    logsDir: verifyCtx.logsDir,
+    writtenFiles: state.writtenFiles[step.step_id],
+  });
+
+  if (verdict.kind === 'failed' || verdict.kind === 'rejected') {
+    const stepStatus = { ...state.stepStatus, [step.step_id]: 'failed' as StepStatus };
+    return {
+      state: { ...state, stepStatus },
+      event: { kind: 'escalate', reason: `step ${step.step_id} (${step.agent_id}) verification failed: ${verdict.reason}` },
+      step,
+    };
+  }
+
+  const unverifiedSteps = verdict.kind === 'unverified' ? new Set(state.unverifiedSteps).add(step.step_id) : state.unverifiedSteps;
   const stepStatus = { ...state.stepStatus, [step.step_id]: 'done' as StepStatus };
-  const newState = { ...state, stepStatus };
-  return { state: newState, event: completionEvent(newState) };
+  const newState = { ...state, stepStatus, unverifiedSteps };
+  return { state: newState, event: completionEvent(newState), unverified: verdict.kind === 'unverified', step };
 }
 
 // WRITE вне заявленных files (pathGuard вернул FILE_NOT_OWNED) — тоже повод эскалации
@@ -156,6 +219,13 @@ export function escalationNotify(reason: string): BusMessage {
 export function currentStepFilesForAgent(state: PlanExecutionState, agentId: string): string[] | null {
   const step = state.plan.steps.find((s) => s.agent_id === agentId && state.stepStatus[s.step_id] === 'sent');
   return step ? step.files : null;
+}
+
+// task_id текущего (status: 'sent') шага агента — источник для git_checkpoints (задача B.8):
+// "первый WRITE в рамках task_id" нужен именно этот task_id, не step_id.
+export function currentTaskIdForAgent(state: PlanExecutionState, agentId: string): string | null {
+  const step = state.plan.steps.find((s) => s.agent_id === agentId && state.stepStatus[s.step_id] === 'sent');
+  return step ? (state.taskIds[step.step_id] ?? null) : null;
 }
 
 // Дедуп STATUS (ARCHITECTURE §8): состояние агента фиксируется, но во время механического

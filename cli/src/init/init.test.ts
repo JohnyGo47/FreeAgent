@@ -82,7 +82,10 @@ test('no git, no --no-git: asks to init; confirming runs git init', async (t) =>
   assert.equal(result.gitInitialized, true);
 });
 
-test('--no-git: warning, continues without asking', async (t) => {
+// spec_git_checkpoints задача B.13: "ПОСТОЯННЫЙ warning в TUI" — не только в момент этого вызова
+// init (result.checkpointsDisabledWarning), но и в следующих сессиях, поэтому config.git_checkpoints
+// персистируется как false, не только возвращается в результате.
+test('--no-git: warning, continues without asking, git_checkpoints:false персистируется в конфиге', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
 
@@ -98,6 +101,9 @@ test('--no-git: warning, continues without asking', async (t) => {
   assert.equal(asked, false);
   assert.equal(result.gitInitialized, false);
   assert.equal(result.checkpointsDisabledWarning, true);
+
+  const config = JSON.parse(await readFile(join(dir, 'freeagent', 'freeagent.config.json'), 'utf8'));
+  assert.equal(config.git_checkpoints, false);
 });
 
 test('.gitignore already contains /freeagent/: line is not duplicated', async (t) => {

@@ -18,6 +18,8 @@ export interface ReplResult {
   toOrchestrator?: BusMessage;
   configPatch?: Partial<FreeAgentConfig>;
   stopExecution?: true; // /stop (spec_plan_execution задача B.13) — bin.ts применяет к MainLoopState.execution
+  undoRequest?: { taskId?: string }; // /undo [task_id] (spec_git_checkpoints задача B.12) — git revert
+  // реальная I/O-операция, runReplCommand синхронна; bin.ts выполняет её и сообщает исход через NOTIFY
 }
 
 function out(output: string): ReplResult {
@@ -65,9 +67,10 @@ export function runReplCommand(input: string, ctx: ReplContext): ReplResult {
     // stopExecution() в planExecution.ts, bin.ts применяет флаг к MainLoopState.execution.
     case '/stop':
       return { output: 'stop: новые задачи плана не будут отправлены, текущие дорабатывают', stopExecution: true };
-    // /undo остаётся в spec_git_checkpoints (заход 2) — заглушку PR-3 не трогаем здесь.
+    // /undo [task_id] (spec_git_checkpoints задача B.12): без аргумента — последний чекпоинт,
+    // с task_id — именно эта задача. Сам git revert делает bin.ts (реальная I/O), здесь только сигнал.
     case '/undo':
-      return out(`${cmd}: не реализовано в этом PR — зависит от spec_git_checkpoints (заход 2 PR-8)`);
+      return { output: arg ? `undo: откатываю ${arg}...` : 'undo: откатываю последний чекпоинт...', undoRequest: { taskId: arg || undefined } };
     default:
       return out(`unknown command: ${cmd}`);
   }
