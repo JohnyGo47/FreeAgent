@@ -33,11 +33,14 @@ export function applyMessageToRegistry(msg: BusMessage, registry: AgentsRegistry
 
 // FS_CALL → parseFsCall/dispatch (существующий fs-pipeline) → FS_RESULT адресован обратно
 // вызвавшему агенту (msg.from), тем же путём, что любой адресный BusMessage (микро-PR перед PR-5).
-export async function handleFsCall(root: string, msg: BusMessage): Promise<BusMessage | null> {
+// ownedFiles — files текущего шага msg.from в активном плане (уровень-3, spec_plan_execution
+// задача C); null/undefined — плана нет или yolo, уровень-3 пропускается (mainLoop решает это,
+// applyMessage про план ничего не знает).
+export async function handleFsCall(root: string, msg: BusMessage, ownedFiles?: string[] | null): Promise<BusMessage | null> {
   if (msg.type !== 'FS_CALL') return null;
 
   const modelText = typeof msg.payload === 'string' ? msg.payload : '';
-  const turn = await runFsTurn(root, modelText);
+  const turn = await runFsTurn(root, modelText, ownedFiles);
   if (!turn.hasCall) return null;
 
   return {

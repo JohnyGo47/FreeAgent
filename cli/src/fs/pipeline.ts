@@ -12,12 +12,12 @@ export interface FsTurnResult {
   rendered: string[]; // текстовые [FS_RESULT] блоки в том же порядке
 }
 
-export async function runFsTurn(root: string, modelText: string): Promise<FsTurnResult> {
+export async function runFsTurn(root: string, modelText: string, ownedFiles?: string[] | null): Promise<FsTurnResult> {
   const { calls } = parseFsCall(modelText);
   if (calls.length === 0) return { hasCall: false, results: [], rendered: [] };
 
   const results: FsResult[] = [];
-  results.push(await dispatch(root, calls[0].args));
+  results.push(await dispatch(root, calls[0].args, ownedFiles));
   for (let i = 1; i < calls.length; i++) {
     results.push(fsError('MULTIPLE_CALLS', `only one [FS] call per turn; ignored: op=${calls[i].args.op}`, 'one call per turn, then wait'));
   }

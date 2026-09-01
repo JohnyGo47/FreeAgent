@@ -10,11 +10,11 @@ function countOccurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
-export async function edit(root: string, path: string, oldStr: string, newStr: string): Promise<FsResult> {
+export async function edit(root: string, path: string, oldStr: string, newStr: string, ownedFiles?: string[] | null): Promise<FsResult> {
   if (typeof oldStr !== 'string' || oldStr.length === 0) return fsError('BAD_ARGS', 'old fragment is required');
   if (typeof newStr !== 'string') return fsError('BAD_ARGS', 'new fragment is required');
 
-  const check = await validateWritePath(root, path);
+  const check = await validateWritePath(root, path, ownedFiles);
   if (!check.ok) return check.error;
 
   const content = await readFile(check.resolved, 'utf8').catch(() => null);

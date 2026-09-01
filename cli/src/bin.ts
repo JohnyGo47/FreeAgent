@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // `freeagent` — каркас CLI (spec_cli). Команды: init, start, do, agents, log.
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { readFile, unlink, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import readline from 'node:readline';
 import { render } from 'ink';
 import React from 'react';
@@ -13,6 +16,8 @@ import { buildTabStateRequests, reconcileFromResponses } from './cli/reconcile.t
 import { acquireSessionLock, SessionAlreadyRunning } from './cli/singleSession.ts';
 import { agentsStatus, recentLog } from './cli/status.ts';
 import { runReplCommand } from './cli/replCommands.ts';
+import { IDLE_GATE, approvePlan, cancelPlan, revisePlan, planToEditableText } from './cli/planMode.ts';
+import { startExecution, stopExecution } from './cli/planExecution.ts';
 import { App } from './tui/App.ts';
 import type { BusMessage } from '../../shared/bus-types/index.ts';
 
@@ -77,9 +82,43 @@ async function cmdStart(projectRoot: string): Promise<void> {
   setInterval(() => void tick(), 2000);
   await tick();
 
+  // Правка плана: markdown в $EDITOR, отредактированное -> PLAN_REVISED (spec_cli_plan_mode).
+  // Реальный spawn/temp-файл живёт здесь (composition root), planMode.ts/App.ts остаются чистыми
+  // и тестируемыми без живого терминала.
+  const editPlanInEditor = async (): Promise<void> => {
+    if (!state.gate?.plan) return;
+    const editorCmd = process.env.EDITOR || process.env.VISUAL || (process.platform === 'win32' ? 'notepad' : 'vi');
+    const tmpFile = join(tmpdir(), `freeagent-plan-${Date.now()}.md`);
+    await writeFile(tmpFile, planToEditableText(state.gate.plan), 'utf8');
+    spawnSync(editorCmd, [tmpFile], { stdio: 'inherit' });
+    const edited = await readFile(tmpFile, 'utf8').catch(() => null);
+    await unlink(tmpFile).catch(() => {});
+    if (edited === null || !state.gate) return;
+
+    const outcome = revisePlan(state.gate, edited, Object.keys(state.registry));
+    if ('toOrchestrator' in outcome) {
+      state.gate = outcome.gate;
+      state.execution = startExecution(outcome.gate.plan!);
+      await writer.mergeOnce([JSON.stringify(outcome.toOrchestrator)]);
+    }
+    // невалидная правка: гейт остаётся plan_ready, план не тронут — можно попробовать [e] снова
+  };
+
   render(
     h(App, {
       getContext: () => ({ registry: state.registry, messages, config }),
+      getGate: () => state.gate ?? IDLE_GATE,
+      onApprovePlan: () => {
+        if (!state.gate) return;
+        const approved = approvePlan(state.gate);
+        state.gate = approved;
+        if (approved.status === 'approved' && approved.plan) state.execution = startExecution(approved.plan);
+      },
+      onCancelPlan: () => {
+        state.gate = cancelPlan();
+        state.execution = undefined;
+      },
+      onEditPlan: () => void editPlanInEditor(),
       onResult: async (result) => {
         if (result.configPatch) {
           Object.assign(config, result.configPatch);
@@ -87,6 +126,9 @@ async function cmdStart(projectRoot: string): Promise<void> {
         }
         if (result.toOrchestrator) {
           await writer.mergeOnce([JSON.stringify(result.toOrchestrator)]);
+        }
+        if (result.stopExecution && state.execution) {
+          state.execution = stopExecution(state.execution);
         }
       },
     }),

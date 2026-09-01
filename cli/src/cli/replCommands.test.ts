@@ -35,9 +35,16 @@ test('/btw <текст> уходит оркестратору как TASK от u
   assert.equal(result.toOrchestrator?.to, 'orchestrator');
 });
 
-test('/stop и /undo вне рамок PR-3 (зависят от spec_plan_execution / spec_git_checkpoints, PR-8) — явный отказ, не притворная реализация', () => {
-  for (const cmd of ['/stop', '/undo']) {
-    const result = runReplCommand(cmd, ctx());
-    assert.match(result.output, /PR-8/);
-  }
+// spec_plan_execution задача B.13: /stop снимает заглушку PR-3 (зависимость появилась — plan_execution
+// теперь существует). Сигнал уходит в bin.ts как stopExecution: true, а не как toOrchestrator —
+// это остановка исполнения плана внутри CLI, оркестратора она не касается.
+test('/stop сигнализирует остановку исполнения плана (новые задачи не уходят), не трогает оркестратора', () => {
+  const result = runReplCommand('/stop', ctx());
+  assert.equal(result.stopExecution, true);
+  assert.equal(result.toOrchestrator, undefined);
+});
+
+test('/undo остаётся вне рамок этого захода (зависит от spec_git_checkpoints, заход 2 PR-8) — явный отказ, не притворная реализация', () => {
+  const result = runReplCommand('/undo', ctx());
+  assert.match(result.output, /заход 2/);
 });

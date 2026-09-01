@@ -7,11 +7,11 @@ import { fsError, fsOk, type FsResult } from './types.ts';
 export type WriteKind = 'code' | 'test' | 'doc' | 'data';
 const VALID_KINDS: WriteKind[] = ['code', 'test', 'doc', 'data'];
 
-export async function write(root: string, path: string, content: string, kind?: string): Promise<FsResult> {
+export async function write(root: string, path: string, content: string, kind?: string, ownedFiles?: string[] | null): Promise<FsResult> {
   if (typeof content !== 'string') return fsError('BAD_ARGS', 'write body is required');
   const resolvedKind: WriteKind = VALID_KINDS.includes(kind as WriteKind) ? (kind as WriteKind) : 'code';
 
-  const check = await validateWritePath(root, path);
+  const check = await validateWritePath(root, path, ownedFiles);
   if (!check.ok) return check.error;
 
   const existed = await stat(check.resolved).then(() => true).catch(() => false);

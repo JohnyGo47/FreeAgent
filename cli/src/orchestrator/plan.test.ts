@@ -56,7 +56,11 @@ test('a dependency cycle is rejected before the plan reaches the user', () => {
   if (!result.ok) assert.match(result.error, /cycle/i);
 });
 
-test('two steps claiming the same file are rejected with the conflict named', () => {
+// ARCHITECTURE §10: "Пересечение → последовательное исполнение", не отказ. Роль-текст
+// spec_md_orchestrator раньше говорил строже ("два шага не могут трогать один файл") — приведён
+// к архитектуре в ревизии PR-8. validatePlan больше не отклоняет план из-за пересечения files;
+// это сигнал расписания для spec_plan_execution (последовательный запуск), не ошибка валидации.
+test('two steps claiming the same file pass validation — overlap is a scheduling signal, not a validation error', () => {
   const overlap = parsePlanText(
     ['[PLAN]', 'STEP 1 | coder1 | a | FILES: shared.ts | DEPENDS: none', 'STEP 2 | coder2 | b | FILES: shared.ts | DEPENDS: none', '[/PLAN]'].join(
       '\n',
@@ -65,8 +69,7 @@ test('two steps claiming the same file are rejected with the conflict named', ()
   assert.equal(overlap.ok, true);
   if (!overlap.ok) return;
   const result = validatePlan(overlap.plan, ['coder1', 'coder2']);
-  assert.equal(result.ok, false);
-  if (!result.ok) assert.match(result.error, /shared\.ts/);
+  assert.equal(result.ok, true);
 });
 
 test('an unknown agent_id is rejected with the list of valid agents', () => {

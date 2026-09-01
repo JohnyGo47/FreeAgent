@@ -17,6 +17,7 @@ export interface ReplResult {
   output: string;
   toOrchestrator?: BusMessage;
   configPatch?: Partial<FreeAgentConfig>;
+  stopExecution?: true; // /stop (spec_plan_execution задача B.13) — bin.ts применяет к MainLoopState.execution
 }
 
 function out(output: string): ReplResult {
@@ -60,9 +61,13 @@ export function runReplCommand(input: string, ctx: ReplContext): ReplResult {
         },
       };
     }
+    // /stop (spec_plan_execution задача B.13): текущие задачи дорабатывают, новые не уходят —
+    // stopExecution() в planExecution.ts, bin.ts применяет флаг к MainLoopState.execution.
     case '/stop':
+      return { output: 'stop: новые задачи плана не будут отправлены, текущие дорабатывают', stopExecution: true };
+    // /undo остаётся в spec_git_checkpoints (заход 2) — заглушку PR-3 не трогаем здесь.
     case '/undo':
-      return out(`${cmd}: не реализовано в этом PR — зависит от spec_plan_execution/spec_git_checkpoints (PR-8)`);
+      return out(`${cmd}: не реализовано в этом PR — зависит от spec_git_checkpoints (заход 2 PR-8)`);
     default:
       return out(`unknown command: ${cmd}`);
   }

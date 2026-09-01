@@ -24,7 +24,9 @@ function isFsOp(op: string): op is FsOp {
   return (FS_OPS as readonly string[]).includes(op);
 }
 
-export async function dispatch(root: string, call: FsCallArgs): Promise<FsResult> {
+// ownedFiles: files текущего шага агента в plan_execution (уровень-3, spec_plan_execution задача
+// C) — не относится к list/search/read, только к write/edit пробрасывается дальше.
+export async function dispatch(root: string, call: FsCallArgs, ownedFiles?: string[] | null): Promise<FsResult> {
   if (!isFsOp(call.op)) {
     return fsError('UNKNOWN_OP', `unknown op: ${call.op}`, `valid ops: ${FS_OPS.join(', ')}`);
   }
@@ -45,14 +47,14 @@ export async function dispatch(root: string, call: FsCallArgs): Promise<FsResult
     case 'write':
       if (!call.path) return fsError('BAD_ARGS', 'write requires path');
       if (call.body === undefined) return fsError('BAD_ARGS', 'write requires a heredoc body');
-      return write(root, call.path, call.body, call.kind);
+      return write(root, call.path, call.body, call.kind, ownedFiles);
 
     case 'edit':
       if (!call.path) return fsError('BAD_ARGS', 'edit requires path');
       if (call.old === undefined || call.new === undefined) {
         return fsError('BAD_ARGS', 'edit requires ---OLD---/---NEW--- body');
       }
-      return edit(root, call.path, call.old, call.new);
+      return edit(root, call.path, call.old, call.new, ownedFiles);
   }
 }
 

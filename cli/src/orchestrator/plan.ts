@@ -49,16 +49,9 @@ export function validatePlan(plan: PlanPayload, validAgentIds: string[]): Valida
     }
   }
 
-  const fileOwner = new Map<string, number>();
-  for (const step of plan.steps) {
-    for (const file of step.files) {
-      const owner = fileOwner.get(file);
-      if (owner !== undefined && owner !== step.step_id) {
-        return { ok: false, error: `file conflict: ${file} claimed by steps ${owner} and ${step.step_id}` };
-      }
-      fileOwner.set(file, step.step_id);
-    }
-  }
+  // ARCHITECTURE §10: пересечение files между шагами — сигнал расписания (последовательное
+  // исполнение в plan_execution), не ошибка валидации. Роль-текст spec_md_orchestrator раньше
+  // требовал строже ("два шага не могут трогать один файл"); приведён к архитектуре в PR-8.
 
   const byId = new Map(plan.steps.map((s) => [s.step_id, s]));
   const state = new Map<number, 'visiting' | 'done'>();

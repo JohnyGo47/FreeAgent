@@ -4,14 +4,38 @@ import { dirname, join } from 'node:path';
 import { parseBusLine } from '../../../shared/bus-types/index.ts';
 import { log } from '../../../shared/log.ts';
 import type { BusWriter } from '../bus/write.ts';
-import type { AgentsRegistry } from '../registry/registry.ts';
+import { type AgentsRegistry, validAgentIds } from '../registry/registry.ts';
 import { loadConfig, type FreeAgentConfig } from '../config/config.ts';
 import { scanIncoming } from './mergeIncoming.ts';
 import { route, flushBuffered, type Delivery } from './router.ts';
 import { applyMessageToRegistry, handleFsCall, handleRegisterRequest, handleTabState, handleResponseHealth, handleSwitchReady } from './applyMessage.ts';
 import { checkInitTimeouts } from '../agents/initAgent.ts';
 import { rotateIfNeeded, rotationConfigFromThreshold } from '../bus/rotation.ts';
+import { parseFsCall } from '../fs/parseFsCall.ts';
 import type { BusMessage } from '../../../shared/bus-types/index.ts';
+import {
+  IDLE_GATE,
+  type PlanGate,
+  startTask,
+  isBlockedByGate,
+  checkTimeout,
+  receivePlanText,
+  pauseCommand,
+  planViolationNotify,
+  replanCommand,
+  planGiveUpNotify,
+} from './planMode.ts';
+import {
+  type PlanExecutionState,
+  startExecution,
+  nextTasks,
+  applyResult,
+  applyOwnershipViolation,
+  dedupeStatus,
+  currentStepFilesForAgent,
+  planCompleteNotify,
+  escalationNotify,
+} from './planExecution.ts';
 
 export interface MainLoopState {
   registry: AgentsRegistry;
@@ -19,6 +43,21 @@ export interface MainLoopState {
   cursor: number; // seq главной шины, не байтовый offset и не номер строки (ARCHITECTURE §4) —
   // переживает ротацию (spec_bus_rotation): файл целиком перечитывается каждый тик, поэтому
   // "застревание" на позиции невозможно, а seq остаётся валиден после перезаписи файла.
+  gate?: PlanGate; // текущая задача: ждём/получили/approved план (spec_cli_plan_mode). Опционален
+  // только для обратной совместимости старых литералов состояния в тестах — runMainLoopOnce
+  // материализует IDLE_GATE, если не задан.
+  execution?: PlanExecutionState; // существует только пока approved-план исполняется (spec_plan_execution)
+}
+
+// Раунд nextTasks() → реальная отправка через router.route() (буферизация SWITCHING/INITIALIZING
+// — задача B.12, router.ts её уже умеет, здесь не переписывается).
+function dispatchPlanTasks(execution: PlanExecutionState, registry: AgentsRegistry, buffered: Record<string, BusMessage[]>, commands: Delivery[]): PlanExecutionState {
+  const round = nextTasks(execution);
+  for (const task of round.tasks) {
+    const routed = route(task, registry, buffered);
+    commands.push(...routed.toCommands);
+  }
+  return round.state;
 }
 
 export async function runMainLoopOnce(
@@ -49,6 +88,14 @@ export async function runMainLoopOnce(
     return cachedConfig;
   };
 
+  if (state.gate === undefined) state.gate = { ...IDLE_GATE };
+  // Начало тика: план только что approved извне (TUI [Enter]/[e], bin.ts создаёт state.execution)
+  // или прошлый тик освободил файл занятого шага — оба случая дают новые sendable-шаги без
+  // участия входящего сообщения этого тика.
+  if (state.execution) {
+    state.execution = dispatchPlanTasks(state.execution, state.registry, state.buffered, commands);
+  }
+
   for (const lineText of lines) {
     const parsed = parseBusLine(lineText);
     if (!parsed.ok) continue; // битая строка — пропустить и залогировать (ARCHITECTURE §4); полный
@@ -77,8 +124,30 @@ export async function runMainLoopOnce(
     if (msg.type === 'FS_CALL') {
       const config = await getConfig();
       const fsRoot = join(dirname(freeagentDir), config.project_root);
-      const reply = await handleFsCall(fsRoot, msg);
+      const modelText = typeof msg.payload === 'string' ? msg.payload : '';
+      const isWriteLike = parseFsCall(modelText).calls.some((c) => c.args.op === 'write' || c.args.op === 'edit');
+
+      // Enforcement на стороне CLI (spec_cli_plan_mode задача A.3): WRITE/EDIT до APPROVED по
+      // текущей задаче -> агент на паузу, пользователь уведомлён. Не полагаемся на дисциплину
+      // модели (роль ей об этом говорит, но слабая модель может проигнорировать).
+      if (isWriteLike && isBlockedByGate(state.gate ?? IDLE_GATE)) {
+        commands.push(...route(pauseCommand(msg.from), state.registry, state.buffered).toCommands);
+        await writer.mergeOnce([JSON.stringify(planViolationNotify(msg.from, `${msg.from} отправил WRITE/EDIT до APPROVED плана`))]);
+        continue;
+      }
+
+      // Уровень-3 (spec_write_path_validation §3, задача C): files текущего шага агента в активном
+      // плане; null/undefined вне плана или в yolo — пропускается внутри pathGuard.
+      const ownedFiles = state.execution ? currentStepFilesForAgent(state.execution, msg.from) : undefined;
+      const reply = await handleFsCall(fsRoot, msg, ownedFiles);
       if (reply) {
+        if (isWriteLike && state.execution && ownedFiles && typeof reply.payload === 'string' && reply.payload.includes('"code":"FILE_NOT_OWNED"')) {
+          const violation = applyOwnershipViolation(state.execution, msg.from, modelText);
+          state.execution = violation.state;
+          if (violation.event.kind === 'escalate') {
+            await writer.mergeOnce([JSON.stringify(escalationNotify(violation.event.reason))]);
+          }
+        }
         const routedReply = route(reply, state.registry, state.buffered);
         commands.push(...routedReply.toCommands);
         if (routedReply.toBus) {
@@ -86,6 +155,67 @@ export async function runMainLoopOnce(
         }
       }
       continue; // FS_CALL адресован 'cli' — обычный route() ниже вернул бы пустой toCommands
+    }
+
+    // Новая задача от пользователя — гейт стартует здесь, но TASK всё равно должен дойти до
+    // оркестратора обычным route() ниже (без continue): без текста задачи он не может выдать план.
+    if (msg.type === 'TASK' && msg.from === 'user' && msg.to === 'orchestrator') {
+      const config = await getConfig();
+      state.gate = startTask(msg.id || `t-${msg.seq}`, Date.now(), config.mode);
+      state.execution = undefined;
+    }
+
+    // Задача A.3/A.1: оркестратор шлёт TASK агенту напрямую, минуя plan_execution, пока план не
+    // approved — заблокировать. Легитимные TASK от plan_execution идут с from:'cli', этой ветки
+    // не касаются.
+    if (msg.type === 'TASK' && msg.from === 'orchestrator' && msg.to !== 'cli' && msg.to !== 'extension' && isBlockedByGate(state.gate ?? IDLE_GATE)) {
+      commands.push(...route(pauseCommand(msg.to), state.registry, state.buffered).toCommands);
+      await writer.mergeOnce([JSON.stringify(planViolationNotify(msg.from, `оркестратор начал без плана: TASK -> ${msg.to} до APPROVED`))]);
+      continue;
+    }
+
+    // Ответ оркестратора на ожидание плана: [PLAN]...[/PLAN] в сыром тексте (та же схема
+    // проводки, что FS_CALL — payload возит текст как есть, парсит только CLI).
+    if (msg.type === 'PLAN' && msg.from === 'orchestrator') {
+      const rawText = typeof msg.payload === 'string' ? msg.payload : '';
+      const { gate: nextGate, outcome } = receivePlanText(state.gate ?? IDLE_GATE, rawText, validAgentIds(state.registry));
+      state.gate = nextGate;
+      if (outcome.kind === 'retry') {
+        await writer.mergeOnce([JSON.stringify(replanCommand(outcome.message))]);
+      } else if (outcome.kind === 'show_raw') {
+        await writer.mergeOnce([JSON.stringify(planGiveUpNotify(outcome.rawText))]);
+      }
+      // 'ready'/'ignored': ничего на шину — TUI подхватывает новый gate из состояния на рендере
+      continue;
+    }
+
+    // RESULT шага исполняемого плана (spec_plan_execution). На счастливом пути (progress) — 0
+    // сообщений оркестратору (continue без mergeOnce); эскалация/завершение — единственные случаи,
+    // когда он вообще узнаёт про план в процессе.
+    if (msg.type === 'RESULT' && msg.to === 'orchestrator' && state.execution) {
+      const config = await getConfig();
+      const outcome = applyResult(state.execution, msg, config.self_assessment_threshold);
+      state.execution = outcome.state;
+
+      if (outcome.event.kind === 'escalate') {
+        await writer.mergeOnce([JSON.stringify(escalationNotify(outcome.event.reason))]);
+      } else if (outcome.event.kind === 'complete') {
+        await writer.mergeOnce([JSON.stringify(planCompleteNotify())]);
+        state.execution = undefined;
+        state.gate = { ...IDLE_GATE }; // задача закрыта, гейт свободен для следующей
+      } else {
+        state.execution = dispatchPlanTasks(state.execution, state.registry, state.buffered, commands);
+      }
+      continue;
+    }
+
+    // Дедуп STATUS (ARCHITECTURE §8, задача B.11): во время исполнения плана рутинный переход
+    // WORKING/IDLE не повод будить оркестратора — эскалация только по исключениям выше.
+    if (msg.type === 'STATUS' && msg.to === 'orchestrator' && state.execution) {
+      const result = dedupeStatus(state.execution, msg);
+      state.execution = result.state;
+      if (result.toOrchestrator) await writer.mergeOnce([JSON.stringify(result.toOrchestrator)]);
+      continue;
     }
 
     if (msg.type === 'REGISTER_REQUEST') {
@@ -117,6 +247,17 @@ export async function runMainLoopOnce(
     commands.push(...routed.toCommands);
     if (routed.toBus) {
       await writer.mergeOnce([JSON.stringify(routed.toBus)]);
+    }
+  }
+
+  // Таймаут ожидания плана (spec_cli_plan_mode constraint): 120с без валидного [PLAN] -> сырой
+  // ответ (если был) показывается пользователю, предложен повтор. checkTimeout — no-op вне
+  // awaiting_plan, безопасно звать каждый тик.
+  if (state.gate.status === 'awaiting_plan') {
+    const timedOut = checkTimeout(state.gate, Date.now());
+    if (timedOut.status === 'timed_out') {
+      state.gate = timedOut;
+      await writer.mergeOnce([JSON.stringify(planGiveUpNotify(state.gate.rawText ?? '(нет ответа за 120с)'))]);
     }
   }
 

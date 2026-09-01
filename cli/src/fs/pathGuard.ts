@@ -1,7 +1,7 @@
 // Валидация пути от агента — единственный вход к диску проходит отсюда (ARCHITECTURE §11,
-// spec_file_access "Enforcement на стороне CLI" уровни 1-2). Уровень-3 (владение по PlanStep.files)
-// — PR-7, не здесь.
-import { isAbsolute, resolve, sep } from 'node:path';
+// spec_write_path_validation). Уровни 1-2 (traversal, защищённые пути) + уровень-3 (владение по
+// PlanStep.files, PR-8) — все три здесь, в одной точке (spec_plan_execution задача C).
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { fsError, type FsResult } from './types.ts';
 import { PROTECTED_DIR_NAMES, matchesSecretPattern } from './privacyRules.ts';
@@ -67,8 +67,10 @@ function isProtected(root: string, resolved: string): boolean {
   return matchesSecretPattern(base);
 }
 
-// Уровень 1+2: используется только write/edit.
-export async function validateWritePath(root: string, relPath: string): Promise<PathCheck> {
+// Уровень 1+2+3: используется только write/edit. ownedFiles — files текущего шага агента из
+// plan_execution; null/undefined значит «плана нет или yolo» — уровень-3 пропускается целиком
+// (spec_write_path_validation §3, "если план не исполняется — уровень 3 пропускается").
+export async function validateWritePath(root: string, relPath: string, ownedFiles?: string[] | null): Promise<PathCheck> {
   const base = await resolveInRoot(root, relPath);
   if (!base.ok) return base;
   if (isProtected(root, base.resolved)) {
@@ -80,9 +82,19 @@ export async function validateWritePath(root: string, relPath: string): Promise<
     };
   }
 
-  // PR-8: здесь встанет уровень-3 — владение файлом по PlanStep.files текущего шага
-  // (spec_plan_execution). До PR-8 исполняемого плана нет, проверка пропускается целиком
-  // (то же поведение, что и yolo-режим в исполненном плане — см. spec_write_path_validation §3).
+  if (ownedFiles) {
+    const relFromRoot = relative(resolve(root), base.resolved).split(sep).join('/');
+    if (!ownedFiles.includes(relFromRoot)) {
+      return {
+        ok: false,
+        error: fsError(
+          'FILE_NOT_OWNED',
+          `path is outside the current step's files: ${relPath}`,
+          `allowed files for this step: ${ownedFiles.join(', ')}`,
+        ) as FsResult & { ok: false },
+      };
+    }
+  }
 
   return base;
 }

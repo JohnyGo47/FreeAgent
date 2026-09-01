@@ -15,6 +15,7 @@ export const FS_ERROR_CODES = [
   'FILE_TOO_LARGE',
   'IO_ERROR',
   'PRIVACY_EXCLUDED',
+  'FILE_NOT_OWNED',
 ] as const;
 export type FsErrorCode = typeof FS_ERROR_CODES[number];
 

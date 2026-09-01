@@ -103,6 +103,55 @@ test('error message does not leak the absolute project root', async () => {
   }
 });
 
+// Уровень-3 (PR-8, spec_write_path_validation §3 / spec_plan_execution задача C): владение по
+// PlanStep.files текущего шага. Источник ownedFiles — plan_execution; pathGuard про план ничего
+// не знает, только про список строк.
+test('level-3: path inside ownedFiles is accepted', async () => {
+  const root = await makeProject();
+  try {
+    const res = await write(root, 'src/auth.ts', 'export {}', 'code', ['src/auth.ts']);
+    assert.equal(res.ok, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('level-3: path outside ownedFiles is rejected with FILE_NOT_OWNED, file not written', async () => {
+  const root = await makeProject();
+  try {
+    const res = await write(root, 'src/other.ts', 'export {}', 'code', ['src/auth.ts']);
+    assert.equal(res.ok, false);
+    if (!res.ok) {
+      assert.equal(res.error.code, 'FILE_NOT_OWNED');
+      assert.match(res.error.hint ?? '', /src\/auth\.ts/);
+    }
+    const { stat } = await import('node:fs/promises');
+    await assert.rejects(stat(join(root, 'src', 'other.ts')));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('level-3: no active plan (ownedFiles omitted) skips the check, same as yolo', async () => {
+  const root = await makeProject();
+  try {
+    const res = await write(root, 'src/whatever.ts', 'export {}', 'code');
+    assert.equal(res.ok, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('level-3: ownedFiles explicitly null also skips the check', async () => {
+  const root = await makeProject();
+  try {
+    const res = await validateWritePath(root, 'src/whatever.ts', null);
+    assert.equal(res.ok, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 if (process.platform === 'win32') {
   test('windows: case-insensitive prefix still accepted for write', async () => {
     const root = await makeProject();
