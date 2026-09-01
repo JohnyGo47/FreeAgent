@@ -14,6 +14,7 @@ export const FS_ERROR_CODES = [
   'MULTIPLE_CALLS',
   'FILE_TOO_LARGE',
   'IO_ERROR',
+  'PRIVACY_EXCLUDED',
 ] as const;
 export type FsErrorCode = typeof FS_ERROR_CODES[number];
 

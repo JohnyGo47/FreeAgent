@@ -4,10 +4,11 @@
 // gitignore-парсера — когда реальные проекты покажут, что этого не хватает.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { SECRET_FILE_PATTERNS } from './privacyRules.ts';
 
 const BUILTIN_JUNK = ['.git', 'node_modules', 'dist', 'build'];
 
-function patternToRegExp(pattern: string): RegExp {
+export function patternToRegExp(pattern: string): RegExp {
   const dirOnly = pattern.endsWith('/');
   let p = dirOnly ? pattern.slice(0, -1) : pattern;
   if (p.startsWith('/')) p = p.slice(1);
@@ -15,7 +16,7 @@ function patternToRegExp(pattern: string): RegExp {
   return new RegExp(`(^|/)${escaped}(/|$)`);
 }
 
-async function readIgnoreFile(path: string): Promise<string[]> {
+export async function readIgnoreFile(path: string): Promise<string[]> {
   const raw = await readFile(path, 'utf8').catch(() => '');
   return raw
     .split('\n')
@@ -27,8 +28,7 @@ export interface IgnoreMatcher {
   isIgnored(relPath: string): boolean;
 }
 
-export async function loadIgnoreMatcher(root: string): Promise<IgnoreMatcher> {
-  const patterns = [...BUILTIN_JUNK, ...(await readIgnoreFile(join(root, '.gitignore'))), ...(await readIgnoreFile(join(root, '.freeagentignore')))];
+export function buildMatcher(patterns: string[]): IgnoreMatcher {
   const regexes = patterns.map(patternToRegExp);
   return {
     isIgnored(relPath: string): boolean {
@@ -36,4 +36,16 @@ export async function loadIgnoreMatcher(root: string): Promise<IgnoreMatcher> {
       return regexes.some((re) => re.test(posix));
     },
   };
+}
+
+// Секретные паттерны (privacyRules) подмешаны сюда же — дерево/поиск не должны показывать
+// .env/*.pem наравне с обычным мусором (spec_context_privacy_filter B, "не виден в дереве").
+export async function loadIgnoreMatcher(root: string): Promise<IgnoreMatcher> {
+  const patterns = [
+    ...BUILTIN_JUNK,
+    ...SECRET_FILE_PATTERNS,
+    ...(await readIgnoreFile(join(root, '.gitignore'))),
+    ...(await readIgnoreFile(join(root, '.freeagentignore'))),
+  ];
+  return buildMatcher(patterns);
 }

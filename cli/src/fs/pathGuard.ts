@@ -4,9 +4,7 @@
 import { isAbsolute, resolve, sep } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { fsError, type FsResult } from './types.ts';
-
-// Фиксированный список защищённых путей PR-4. PR-7 расширит уровнем-3.
-const PROTECTED_SEGMENTS = ['.git', '.env', 'freeagent'];
+import { PROTECTED_DIR_NAMES, matchesSecretPattern } from './privacyRules.ts';
 
 function isWithin(root: string, target: string): boolean {
   const norm = (p: string) => (process.platform === 'win32' ? p.toLowerCase() : p);
@@ -59,13 +57,17 @@ export async function resolveInRoot(root: string, relPath: string): Promise<Path
   return { ok: true, resolved };
 }
 
+// Паттерн-матчинг (PR-7), не точное сравнение сегмента: .env.local / *.pem / node_modules
+// (любой глубины) теперь тоже защищены, список — общая точка истины privacyRules.
 function isProtected(root: string, resolved: string): boolean {
   const relFromRoot = resolved.slice(resolve(root).length).replace(/^[\\/]+/, '');
-  const firstSegment = relFromRoot.split(/[\\/]/)[0];
-  return PROTECTED_SEGMENTS.includes(firstSegment);
+  const segments = relFromRoot.split(/[\\/]/);
+  if (segments.some((seg) => PROTECTED_DIR_NAMES.includes(seg))) return true;
+  const base = segments[segments.length - 1] ?? '';
+  return matchesSecretPattern(base);
 }
 
-// Уровень 1+2: используется только write/edit. PR-7 обернёт это уровнем-3.
+// Уровень 1+2: используется только write/edit.
 export async function validateWritePath(root: string, relPath: string): Promise<PathCheck> {
   const base = await resolveInRoot(root, relPath);
   if (!base.ok) return base;
@@ -77,5 +79,10 @@ export async function validateWritePath(root: string, relPath: string): Promise<
       },
     };
   }
+
+  // PR-8: здесь встанет уровень-3 — владение файлом по PlanStep.files текущего шага
+  // (spec_plan_execution). До PR-8 исполняемого плана нет, проверка пропускается целиком
+  // (то же поведение, что и yolo-режим в исполненном плане — см. spec_write_path_validation §3).
+
   return base;
 }
