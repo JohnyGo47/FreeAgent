@@ -113,6 +113,65 @@ test('план с циклом или несуществующим agent_id: ret
   assert.match(bus, /"command":"REPLAN"/);
 });
 
+// spec_plan_execution Test 7: RESULT:FAILED -> эскалация с текстом ошибки, зависимые шаги не
+// стартуют. planExecution.test.ts проверяет applyResult() как чистую функцию; здесь — что
+// mainLoop.ts реально перехватывает RESULT на шине, реально пишет escalationNotify на диск
+// (не просто вызывает функцию) и реально НЕ отправляет TASK шага 2 на следующем тике.
+test('RESULT: FAILED через реальный тик mainLoop — escalationNotify на шине, зависимый шаг 2 не отправлен', async (t) => {
+  const freeagentDir = await projectDir();
+  t.after(() => rm(freeagentDir, { recursive: true, force: true }));
+
+  await writeFile(join(freeagentDir, 'incoming', 'browser_user.jsonl'), line('m1', 'user', 'orchestrator', 'TASK', { task_id: 't1', description: 'go' }) + '\n', 'utf8');
+  const writer = await BusWriter.create(join(freeagentDir, 'message_bus.jsonl'));
+  const state: MainLoopState = { registry: baseRegistry(), buffered: {}, cursor: 0 };
+  await runMainLoopOnce(freeagentDir, writer, state);
+
+  const linearPlan = [
+    '[PLAN]',
+    'STEP 1 | coder1 | шаг 1 | FILES: a.ts | DEPENDS: none',
+    'STEP 2 | coder1 | шаг 2 | FILES: b.ts | DEPENDS: 1',
+    '[/PLAN]',
+  ].join('\n');
+  await writeFile(join(freeagentDir, 'incoming', 'browser_o.jsonl'), line('m2', 'orchestrator', 'cli', 'PLAN', linearPlan) + '\n', 'utf8');
+  await runMainLoopOnce(freeagentDir, writer, state);
+  assert.equal(state.gate?.status, 'plan_ready');
+
+  const { approvePlan } = await import('./planMode.ts');
+  const { startExecution } = await import('./planExecution.ts');
+  state.gate = approvePlan(state.gate!);
+  state.execution = startExecution(state.gate.plan!);
+
+  const round1 = await runMainLoopOnce(freeagentDir, writer, state); // шаг 1 уходит coder1
+  const step1Task = round1.commands.find((c) => c.message.type === 'TASK');
+  assert.ok(step1Task);
+  const step1TaskId = (step1Task!.message.payload as { task_id: string }).task_id;
+
+  await writeFile(
+    join(freeagentDir, 'incoming', 'browser_a.jsonl'),
+    line('r1', 'coder1', 'orchestrator', 'RESULT', { task_id: step1TaskId, status: 'FAILED', summary: 'stack trace: TypeError boom' }) + '\n',
+    'utf8',
+  );
+  const round2 = await runMainLoopOnce(freeagentDir, writer, state); // RESULT:FAILED обработан на реальном тике
+  assert.equal(round2.commands.some((c) => c.message.type === 'TASK'), false); // шаг 2 не уходит этим тиком
+
+  // escalationNotify пишется через writer.mergeOnce (тот же приём, что ERROR/остальные toBus в
+  // этом файле) — появляется в файле шины, но раунд, который его породил, ещё не читал этот файл
+  // заново, поэтому реальная маршрутизация оркестратору видна на СЛЕДУЮЩЕМ тике.
+  const round3 = await runMainLoopOnce(freeagentDir, writer, state);
+  assert.equal(round3.commands.some((c) => c.message.type === 'TASK'), false, 'шаг 2 зависит от заваленного шага 1 и не открывается никогда');
+  const delivered = round3.commands.find((c) => c.message.type === 'NOTIFY' && c.instanceId === 'browser_o');
+  assert.ok(delivered, 'эскалация реально доставлена в commands/<instance оркестратора>, не только легла на шину');
+  assert.match((delivered!.message.payload as { details: string }).details, /TypeError boom/);
+
+  await appendCommands(freeagentDir, round3.commands);
+  const commandsFile = await readFile(join(freeagentDir, 'commands', 'browser_o.jsonl'), 'utf8');
+  assert.match(commandsFile, /PLAN_ESCALATION/);
+
+  // Ничего не осталось недоставленным / не зациклилось — следующий тик тих.
+  const round4 = await runMainLoopOnce(freeagentDir, writer, state);
+  assert.equal(round4.commands.length, 0);
+});
+
 // spec_plan_execution Integration check: план на 4 шага с двумя параллельными ветками ->
 // полное исполнение без участия оркестратора в процессе -> ровно один NOTIFY (PLAN_COMPLETE).
 // Заодно покрывает Test 9 (SWITCHING -> очередь -> доставка после READY, остальные ветки идут).

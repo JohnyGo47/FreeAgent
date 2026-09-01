@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { validateWritePath } from './pathGuard.ts';
+import { resolveInRoot, validateWritePath } from './pathGuard.ts';
 import { write } from './write.ts';
 
 async function makeProject(): Promise<string> {
@@ -70,7 +70,30 @@ test('write: normal src file still accepted', async () => {
   }
 });
 
-test('symlink pointing outside root is rejected via realpath', async (t) => {
+// Обязательный, платформо-независимый: не требует реального симлинка на диске (Windows без
+// Developer Mode/admin не даёт его создать — EPERM), поэтому раньше это покрытие тихо пропадало
+// на CI под Windows. realpathFn подменяет только результат резолва, вся остальная логика
+// (лексическая проверка, isWithin, код ошибки) — настоящая, не замокана.
+test('symlink escape (mocked realpath): resolveInRoot returns PATH_ESCAPE without a real symlink on disk', async () => {
+  const root = await makeProject();
+  try {
+    const outsideDir = join(tmpdir(), 'freeagent-outside-mocked');
+    // Симулирует escape/ -> outsideDir: лексически путь внутри root (проходит уровень-1 lexical
+    // check), но realpath уводит наружу — ровно сценарий symlink-эскейпа.
+    const fakeRealpath = async (p: string): Promise<string> => (p.includes('escape') ? join(outsideDir, 'pwned.txt') : p);
+
+    const res = await resolveInRoot(root, 'escape/pwned.txt', fakeRealpath);
+    assert.equal(res.ok, false);
+    if (!res.ok) assert.equal(res.error.error.code, 'PATH_ESCAPE');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// Дополнительно, best-effort на настоящей ФС: не единственная гарантия покрытия (тест выше уже
+// проверяет логику безусловно), поэтому скип здесь допустим — это лишь подтверждение, что
+// реальный fs.realpath ведёт себя так, как ожидает resolveInRoot.
+test('symlink pointing outside root is rejected via real fs.realpath (best-effort, platform permissions permitting)', async (t) => {
   const root = await makeProject();
   try {
     const outside = await mkdtemp(join(tmpdir(), 'freeagent-outside-'));

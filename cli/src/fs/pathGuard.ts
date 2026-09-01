@@ -15,8 +15,14 @@ function isWithin(root: string, target: string): boolean {
 
 export type PathCheck = { ok: true; resolved: string } | { ok: false; error: FsResult & { ok: false } };
 
+// Инъекция realpath (по умолчанию — настоящий fs.realpath): symlink-эскейп на Windows без
+// Developer Mode/admin нельзя создать на диске (EPERM), но саму логику "realpath увёл за
+// пределы корня -> PATH_ESCAPE" нужно проверять безусловно на любой платформе — тест подменяет
+// эту функцию, реального симлинка не создавая (spec_write_path_validation Test 8).
+export type RealpathFn = (path: string) => Promise<string>;
+
 // Уровень 1: traversal. Используется всеми пятью операциями.
-export async function resolveInRoot(root: string, relPath: string): Promise<PathCheck> {
+export async function resolveInRoot(root: string, relPath: string, realpathFn: RealpathFn = realpath): Promise<PathCheck> {
   if (typeof relPath !== 'string' || relPath.length === 0) {
     return { ok: false, error: fsError('BAD_ARGS', 'path is required') as FsResult & { ok: false } };
   }
@@ -41,8 +47,8 @@ export async function resolveInRoot(root: string, relPath: string): Promise<Path
   // Симлинк может уводить за пределы корня даже когда лексический путь внутри — проверяем,
   // если путь уже существует (write в новый файл существовать не обязан).
   try {
-    const real = await realpath(resolved);
-    const realRoot = await realpath(rootResolved);
+    const real = await realpathFn(resolved);
+    const realRoot = await realpathFn(rootResolved);
     if (!isWithin(realRoot, real)) {
       return {
         ok: false,
