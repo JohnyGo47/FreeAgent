@@ -1,170 +1,113 @@
-# FreeAgent — Runbook отправки в Claude Code
-# Дополняет BRIEFING.md. Учитывает зафиксированные решения и правки из разбора.
+# FreeAgent Runbook
 
-## Как пользоваться
-- Один PR за раз, строго по порядку.
-- Claude Code получает **каждый раз**: `ARCHITECTURE.md` + `STACK.md` + спеки текущего PR.
-  Код прошлых PR уже лежит в репо — его не пересылаешь, Claude Code читает его сам.
-- В `CLAUDE.md` (корень репо):
-  ```
-  Прочитай ARCHITECTURE.md перед любой задачей.
-  Прочитай STACK.md для стека и структуры.
-  Не начинай задачи из других PR, даже если видишь ссылки.
-  ```
-- Промпты для каждого PR — в BRIEFING.md. Здесь только дельта к ним и твои ручные проверки.
+This runbook covers local development, browser validation, and release preparation.
 
----
+## Install and verify
 
-## 0. Pre-flight — ДО первого запуска Claude Code
+```powershell
+npm install
+npm test
+npm run typecheck
+npm run build -w extension
+```
 
-Зафиксированные решения меняют спеки. Внеси эти правки перед PR-1, иначе Claude Code
-построит код по устаревшим спекам. Среди правок есть `ARCHITECTURE.md` → закончи ВСЕ
-правки, и только потом стартуй PR-1 с чистой сессии (правило §46: смена версии архитектуры → новая сессия).
+The extension build produces `background.js`, `content.js`, `popup.js`, and `offscreen.js` in `extension/`. These generated files are not committed.
 
-**Решение A — выкинуть `ACTIVE` (find/replace по файлам):**
-- `ARCHITECTURE.md` §7 и журнал №36: «вне ACTIVE» → «в переходном статусе (не IDLE/WORKING)»
-- `spec_message_bus_types`: убрать `ACTIVE` из `AgentStatus` (станет 10 значений — тест #6 уже про 10)
-- `spec_init_agent`, `spec_agent_recovery`, `spec_backup_agents`: «→ ACTIVE» → «→ IDLE»
-- `spec_cli`, `spec_plan_execution`: «вне ACTIVE» → «в переходном статусе»
+## Load the extension
 
-**Решение B — `id` в конверт:**
-- `ARCHITECTURE.md` §4: добавить `id` в пример JSON и заметку про дедуп
-- `spec_message_bus_types`: `BusMessage += id: string` (uuid, ставит отправитель при создании);
-  `parseBusLine` валидирует; обновить round-trip тест
-- `spec_message_bus_write`: Tier 1 ставит `id` при создании; Tier 2 мерж помнит последние N `id` и пропускает дубль
-- `spec_message_bus_read`: дедуп incoming по `id` (не по номеру строки)
+1. Open `chrome://extensions`.
+2. Enable Developer mode.
+3. Choose **Load unpacked** and select the repository's `extension` directory.
+4. After every rebuild, click **Reload** for the extension and reload each registered LLM tab.
 
-**Решение C — сессия (часть сейчас, часть в PR-3):**
-- `spec_message_bus_write` (сейчас): на старте прочитать max `seq` из последней строки шины, продолжить с `seq+1` (пустой файл → 1)
-- остальное (`freeagent.lock`, `/suspend`) — правки в `spec_cli`, помечены в PR-3
+## Initialize a target project
 
-**Заодно (дешёвые правки, чтобы Claude Code не путался):**
-- `ROADMAP.md`: вписать `md_memory_template` в PR-5 (его требует `init_agent`)
-- удалить дубликат `spec_write_path_validation — копия.md` (идентичен оригиналу)
+Run the CLI from the project that agents should access:
 
-Когда всё внесено — `ARCHITECTURE.md` финальна, стартуешь PR-1.
+```powershell
+cd C:\path\to\target-project
+node C:\path\to\FreeAgent\cli\src\bin.ts init
+node C:\path\to\FreeAgent\cli\src\bin.ts start
+```
 
----
+Initialization creates `freeagent/` and ensures `/freeagent/` is present in the target project's `.gitignore`.
 
-## 1. PR-1 — Шина
-**Отправляешь:** `ARCHITECTURE.md`, `STACK.md`, `spec_message_bus_types`, `spec_message_bus_write`, `spec_message_bus_read`
-**Дельта к промпту:** «Конверт `BusMessage` содержит поле `id`; мерж дедуплицирует по `id`. `seq` восстанавливается из последней строки шины при старте.»
-**Твоя проверка** (низкая — почти всё автотестами):
-- Integration check: Node пишет 5 строк в `incoming/mock.jsonl` → CLI мержит → читатель видит 5 с монотонным `seq`.
-- Руками: запиши сообщение с уже виденным `id` → в главной шине оно **не** продублировалось.
-- Руками: «останови» CLI, запусти снова, домержь ещё строки → `seq` продолжился, не сбросился в 1.
-- ✔ Пройдено: 5/5, дубль отброшен, `seq` непрерывен.
+In the extension popup, select the target project root. Do not select its generated `freeagent` directory. If the browser retained the directory handle but revoked permission, click **Restore access**.
 
-## 2. PR-2 — Каркас расширения
-**Отправляешь:** +`spec_ext_manifest`, `spec_fs_folder_access`
-**Твоя проверка** (РУЧНАЯ, обязательно — теста-заменителя нет):
-- `chrome://extensions` → Load unpacked → загрузи собранное расширение.
-- Popup открывается. В `chrome://serviceworker-internals` останови SW → положи команду → alarm будит offscreen (проверка холодного старта).
-- «Выбрать папку» → scratch-папка → создалась структура `/freeagent/`.
-- **Перезапусти браузер** → доступ к папке восстанавливается максимум в один клик, запись в `incoming` работает (ключевой тест FSA+IndexedDB).
-- ✔ Пройдено: расширение живёт, offscreen пишет в incoming, доступ переживает рестарт.
+## Register agents
 
-## 3. PR-3 — CLI
-**Отправляешь:** +`spec_config`, `spec_cli`, `spec_cli_init`
-**Правки перед отправкой** (решение C):
-- `spec_cli`, новый раздел «жизненный цикл сессии»:
-  - `freeagent.lock` — сессионный замок, держится всю сессию; внутри PID; на старте проверять, жив ли процесс (мёртвый замок перехватить, чтобы не блокировал resume)
-  - `/suspend`: `REQUEST_MEMORY` всем агентам и оркестратору → дождаться `memory/*.md` → git-чекпоинт → отпустить lock → чистый выход
-  - TUI: постоянный статус-бар с подсказками (`plan · /suspend — сохранить и выйти · ^C — стоп`); `Esc` открывает мини-меню (suspend / mode / stop)
-  - resume = `freeagent start` уже сверяет реестр через `TAB_STATE` (есть); дописать доставку буфера после READY
-**Твоя проверка** (два терминала):
-- `freeagent init` в пустой папке → структура, `project_id`, 5 скиллов, `.freeagentignore`.
-- `freeagent start` → TUI «0 агентов, готов».
-- Второй `freeagent start` в той же папке → отказ «уже запущено» (`freeagent.lock`).
-- `/suspend` → память записана, lock отпущен, вышло чисто; `freeagent start` снова → поднялось.
-- ✔ Пройдено: init за 2 команды, вторая сессия отбита, цикл suspend→resume работает.
+1. Open a separate LLM conversation for each agent.
+2. In the popup, choose the role and click **Add tab**.
+3. Wait for the INIT prompt and the agent's `[READY]` response.
+4. Register the orchestrator and the workers referenced by the intended plan.
 
-## 4. PR-4 — Адаптеры, инжект, файловый доступ
-**Отправляешь:** +`spec_llm_adapter_registry`, `spec_llm_message_format`, `spec_response_complete_detection`, `spec_file_access`, а также `system-prompt.md` и `fs-tool-contract.md` (вход для file_access)
-**СНАЧАЛА допиши `spec_file_access`** (блокер PR-4). Он должен покрыть из разбора:
-- Маппинг пяти fs-операций на шину: `fs.read`→`READ`; `fs.write`→`WRITE` (+ добавить `kind`); `fs.edit`/`list`/`search` — новый тип «tool-call» `{tool, args}` по образцу `CommandPayload` (или отдельные типы). Обратный путь `<tool_result>` тоже тип в шине.
-- Проверка пути раздельно: расширение — синтаксис (`../`, абсолютные) для быстрого фидбэка; CLI — авторитетно (realpath, префикс корня, защищённые, владение). Добавить код `FORBIDDEN_PATH` (валиден, но запрещён).
-- Приватность: результат `fs.read` через `privacy_filter`; `fs.list`/`fs.search` уважают `.freeagentignore` (не только `.gitignore`); сниппеты `fs.search` редактируются.
-- Bootstrap-дерево (§6 контракта) отдаётся **и оркестратору перед планом** — сослаться из `md_orchestrator`/`cli_plan_mode`.
-- Large-file cap для `fs.read` (бьёт по счётчику контекста, не только по парсингу).
-- Heredoc: уникализировать `EOF`-маркер (риск строки `EOF` в контенте файла).
-- Два тег-языка в парсере: `[MSG]` (можно несколько, от оркестратора) vs `<tool_call>` (строго один + tail-truncate, от кодера) — какой режим когда.
-**Твоя проверка** (ГЛАВНЫЙ живой чекпоинт — тут выясняется, работает ли скрейпинг вообще):
-- Открой 2 реальных LLM-вкладки (одна contenteditable типа claude.ai, одна textarea), запиннь.
-- Инжектируй тестовый `[MSG]` → дождись `responseComplete` → распарсилось → легло в `incoming` (round-trip JSON⇄теги⇄DOM⇄теги⇄JSON без потерь).
-- Через `<tool_call>`: `fs.write` маленький файл, `fs.read` его назад → содержимое совпало; `fs.search` по проекту → нашёл.
-- Селекторы `input`/`submit` резолвятся на обеих живых страницах.
-- ✔ Пройдено: полный round-trip на 2 сервисах, файловые операции работают вживую.
+If the extension or a tab is reloaded, restore folder access first and then reload every registered agent tab. Re-register only tabs that the CLI reports as unavailable.
 
-## 5. PR-5 — Агенты
-**Отправляешь:** +`spec_skills_system`, `spec_md_orchestrator`, `spec_init_agent`, `spec_md_memory_template`
-**Правки перед отправкой:**
-- `coder.md` должен покрыть ОБА тег-языка: `<tool_call>` (файлы) И `[MSG]` `RESULT`/`TESTS_READY` (DONE/FAILED + summary + self_assessment). `system-prompt.md` — только файловая половина.
-- Написать content для `coder`/`tester`/`researcher`/`reviewer` (расписан только `orchestrator`). Минимум `coder.md` — вместе с file_access.
-- Роль→набор инструментов: оркестратору read-only (`list`/`search`/`read`) + дерево, не все пять (привязать в `skills_system`).
-- `md_orchestrator`/`cli_plan_mode`: зависимость от file_access (дерево) + оркестратор получает дерево перед планом.
-**Твоя проверка** (качество плана — читаешь глазами):
-- Создай оркестратора (пин вкладки) → дай реальную задачу → прочитай `[PLAN]` → CLI распарсил → показал.
-- Прогони на 2 бесплатных моделях: обе выдают валидный `[PLAN]` с первой попытки в >70% (DoD).
-- ✔ Пройдено: план парсится, качество приемлемое на 2 моделях.
+## Run a task
 
-## 6. PR-6 — Устойчивость
-**Отправляешь:** +`spec_agent_recovery`, `spec_response_health`, `spec_backup_agents`, `spec_selector_resilience`, `spec_bus_rotation`
-**Правки перед отправкой:**
-- `spec_bus_rotation`: CLI **не усекает** `incoming` (два писателя!). Вместо: команда расширению «сожми свой incoming», либо жить по строковому курсору. Главную шину ротировать под внутренним флагом-паузой, не под файловым замком.
-- `spec_agent_recovery`: `selectors_broken` — **не** триггер recovery (пересоздание вкладки не чинит селектор). `closed`/`wrong_domain` → recovery; `selectors_broken` → `selector_resilience`.
-- Добавить механизм instance `HEARTBEAT` (нигде не реализован): расширение шлёт пульс раз в минуту; CLI без пульса >2–3 интервалов → инстанс мёртв, `NOTIFY`. (в `agent_recovery` или `ext_manifest`)
-**Твоя проверка** (ручные drills на устойчивость):
-- Закрой вкладку агента вручную → на ближайшем тике alarm ушла команда recovery → агент ответил READY → буферизованная задача доставлена.
-- Сломай селектор `input` в локальном registry → расширение подсветило кандидата → подтверди → агент продолжил, override сохранён.
-- Назначь бэкап на втором профиле → искусственно занизь порог контекста → дождись переключения → агент продолжает с сохранённой памятью.
-- Симулируй текст отказа сервиса → backoff → выбери замену в CLI → переподключился.
-- ✔ Пройдено: смерть вкладки, битый селектор, переполнение контекста, лежащий сервис — у каждого свой путь.
+Submit a task through the CLI or send it to the orchestrator. In plan mode:
 
-## 7. PR-7 — Безопасность
-**Отправляешь:** +`spec_write_path_validation`, `spec_context_privacy_filter`
-**Правки перед отправкой:**
-- `spec_write_path_validation`: реализуй уровни 1–2 (traversal, защищённые пути) СЕЙЧАС; уровень-3 (владение по плану) требует `plan_execution` (PR-8) → добавишь в PR-8. Пометь это прямо в спеке.
-- Список секретов — единственный источник в `privacy_filter`; `write_path_validation` импортирует его, добавляет своё (`/freeagent/`, `.git`).
-**Твоя проверка** (security drill):
-- Проект с `.env`, `secrets/api.key`, `src/config.ts` (с ключом внутри) → `fs.read` на каждый → `.env` и `.key` отклонены, `config.ts` с `[REDACTED]`, CLI показал warning'и.
-- `WRITE` с тремя путями: валидный / `../`traversal / защищённый → первый записан, два отклонены с `ERROR` (без утечки абсолютного корня).
-- ✔ Пройдено: ни один секрет не ушёл в incoming; ни одна опасная запись не прошла.
+1. the orchestrator returns a `[PLAN]` block;
+2. the CLI validates and displays it;
+3. the user approves or rejects it;
+4. the CLI dispatches ready steps;
+5. agents use FS calls for project data;
+6. the CLI runs requested verification commands; and
+7. the orchestrator receives `PLAN_COMPLETE` after every step succeeds.
 
-## 8. PR-8 — Координация
-**Отправляешь:** +`spec_cli_plan_mode`, `spec_plan_execution`, `spec_verification`, `spec_git_checkpoints`
-**Правки перед отправкой:**
-- `spec_plan_execution`: параллельность только если И файлы разные, И агенты разные (решение A); добавить исход «закрыт как unverified» = не эскалация; сюда же уровень-3 `write_path_validation` (владение по плану).
-- `spec_verification`: запуск тестов массивом argv, **shell выключен**; запретить метасимволы в аргументах.
-- `spec_md_orchestrator`/парсер плана: терпимость к `|` в описании (резать по первым 4 разделителям).
-**Твоя проверка** (сквозной прогон):
-- Реальный план на 4 шага с двумя параллельными ветками → полное исполнение → оркестратор получил **только** `PLAN_COMPLETE`.
-- Подсунь ломающийся код → красные тесты → эскалация с текстом ошибки.
-- Команда вне белого списка / с инъекцией в аргументе → не выполнена.
-- `/undo` → файл вернулся, история пользователя цела.
-- ✔ Пройдено: счастливый путь = 1 сообщение оркестратору, эскалация работает, инъекция отбита, откат цел.
+Useful interactive commands include `/status`, `/agents`, `/log`, `/files`, `/mode plan`, `/mode yolo`, `/stop`, `/suspend`, and `/undo <task_id>`.
 
----
+## Failure diagnosis
 
-## Ритуал между PR (каждый раз)
-1. Все тесты — текущего PR **и всех предыдущих** — зелёные.
-2. Прочитай diff сам: не вылез ли Claude Code за рамки PR, не тронул ли чужие файлы.
-3. `git commit`.
-4. Если в реализации всплыла ошибка спеки — запиши, обсуди, **поправь спеку до следующего PR**.
-5. Если правка в `ARCHITECTURE.md` — **новая сессия Claude Code**.
+### INIT does not appear
 
-## Когда новая сессия Claude Code
-- Всегда при смене версии `ARCHITECTURE.md` (иначе в контексте останется отменённое решение).
-- Практически: чистую сессию на каждый PR — контекст не засоряется прошлым.
+- Confirm that the CLI process is running.
+- Confirm that the extension and CLI use the same project root and `project_id`.
+- Confirm that folder access is granted.
+- Reload the extension, then reload the LLM tab.
+- Check the CLI registry for `INIT_FAILED`, `SERVICE_DOWN`, or `SELECTOR_BROKEN`.
 
----
+### A prompt is filled but not submitted
 
-## Recap — только твои ручные проверки, по PR
-- **PR-1:** дубль по `id` отброшен, `seq` переживает рестарт (почти всё автотесты).
-- **PR-2:** расширение в Chrome, доступ к папке переживает рестарт браузера. ← первая настоящая ручная.
-- **PR-3:** две сессии (вторая отбита), suspend→resume.
-- **PR-4:** живой round-trip `[MSG]` и `<tool_call>` на 2 LLM. ← самый важный и самый рискованный.
-- **PR-5:** читаешь качество `[PLAN]` на 2 моделях.
-- **PR-6:** убить вкладку / сломать селектор / переполнить контекст / уронить сервис.
-- **PR-7:** секреты не текут, опасная запись не проходит.
-- **PR-8:** сквозной план + эскалация + `/undo`.
+- Check whether the LLM page is already busy.
+- Reload the page if its submit button is stuck.
+- Confirm that the adapter's input and submit selectors still match the current DOM.
+- Preserve the complete extension error and stack trace before reloading.
+
+### The extension reports no receiver
+
+The background worker attempts to inject `content.js` and retry. If it still fails, reload the target tab and then restore its registration.
+
+### Folder permission was lost
+
+Open the popup and click **Restore access**. Browsers may require a new user gesture after an extension reload or browser restart.
+
+### An agent returns malformed output
+
+The CLI requests the expected protocol format a limited number of times. If retries are exhausted, the step is escalated to the orchestrator. Do not manually mark it complete.
+
+### Tests fail
+
+Inspect the log recorded under `freeagent/logs/`. A failed exit code prevents the step from closing successfully and blocks dependent steps.
+
+### Undo conflicts
+
+`/undo` uses `git revert`. FreeAgent stops on a conflict and reports it; resolve or abort the revert manually after reviewing the repository state.
+
+## Release checklist
+
+1. Confirm that `git status` contains no runtime files, generated bundles, dependencies, or secrets.
+2. Search tracked content for unintended non-English UI or prompt text.
+3. Run `npm test`.
+4. Run `npm run typecheck`.
+5. Run `npm run build -w extension`.
+6. Run `git diff --check`.
+7. Load the new build in Chrome and complete the read-only live workflow in `TESTING.md`.
+8. For changes that affect writes, use a disposable Git repository and verify checkpoint plus undo behavior.
+
+## Operational cautions
+
+- Keep Git checkpoints enabled for normal use.
+- Review plans before approval, especially declared files and test commands.
+- Use a clean or disposable repository for early beta testing.
+- Treat browser selector changes as expected compatibility work, not as proof that local project data is corrupt.

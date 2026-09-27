@@ -1,63 +1,63 @@
 # Spec: write_path_validation
 # Version: 1.0
-# Читать вместе с ARCHITECTURE.md (§11 агенты не пишут на диск)
+# Reading with ARCHITECTURE.md (§11 Agents don't write on disk.)
 
 ## Goal
-Каждый путь из `WRITE` агента проверяется до записи на диск. Выход за корень проекта, запись в служебные файлы, запись вне заявленных файлов шага — отклоняются с `ERROR`.
+Every way out `WRITE` The agent is checked before recording to the disk. Going beyond the root of the project, service-file-recording, recording outside the declared step files - reject from `ERROR`.
 
 ## Input
-- `WritePayload.path` из сообщения агента
-- корень проекта (из `freeagent.config.json`)
-- список разрешённых файлов текущего шага (`PlanStep.files`)
+- `WritePayload.path` post-agent
+- project-root (from `freeagent.config.json`)
+- list of permitted files of the current step (`PlanStep.files`)
 
 ## Output
-- нормализованный абсолютный путь, гарантированно внутри корня проекта
-- или `ERROR` с описанием нарушения
+- normalized, guaranteed within the root of the project
+- or `ERROR` violation-descriptive
 
 ## Contract
 
-### Валидация — три уровня
+### Validation - three levels
 
-**1. Path traversal.** `path.resolve(root, agentPath)` → результат обязан начинаться с `root`. Любые `..`, символические ссылки, абсолютные пути — отклоняются. Это защита от `../../.ssh/authorized_keys`.
+**1. Path traversal.** `path.resolve(root, agentPath)` → The result must begin with `root`. Anybody. `..`, symbolism, Absolute paths - deviate. It's a defense against `../../.ssh/authorized_keys`.
 
-**2. Защищённые пути.** Запись запрещена в:
-- `/freeagent/` и все подпапки (служебная структура)
-- `.git/` (история пользователя неприкосновенна)
-- файлы из privacy-exclude списка (`spec_context_privacy_filter`)
-- `node_modules/`, `.env`, `.env.*` (по умолчанию; расширяемо через конфиг)
+**2. Protected paths.** Recording is prohibited in:
+- `/freeagent/` and all subfolders (service-structure)
+- `.git/` (User history is inviolable)
+- file privacy-exclude list (`spec_context_privacy_filter`)
+- `node_modules/`, `.env`, `.env.*` (default; extendable)
 
-**3. Владение файлом по плану.** Если исполняется план (`spec_plan_execution`), путь должен быть в `PlanStep.files` текущего шага агента. Иначе — `ERROR` с объяснением, какие файлы разрешены. Агент может запросить расширение списка через `REQUEST_FILE_ACCESS` (будущая спека, пока отклоняется).
+**3. File ownership as planned.** If the plan is executed (`spec_plan_execution`), path must `PlanStep.files` current-step agent. Otherwise. — `ERROR` explainably, What files are allowed. The agent may request an extension of the list through `REQUEST_FILE_ACCESS` (future-spec, while deflecting).
 
-Если план не исполняется (yolo-режим или прямая задача) — уровень 3 пропускается.
+If the plan is not implemented (yolo-regime) — level 3 slip.
 
 ## Constraints
-- Валидация выполняется **в CLI** перед `fs.writeFile` — единственная точка записи
-- Нормализация через `path.resolve`, не регулярками — ОС знает свою файловую систему лучше
-- На Windows: `path.resolve` корректно обрабатывает `/` и `\`, но проверка префикса должна быть case-insensitive (NTFS)
-- Симлинки: `fs.realpath` перед проверкой префикса — симлинк, ведущий за пределы корня, отклоняется
-- `ERROR` содержит **путь, который агент запросил**, но **не** содержит абсолютный путь корня проекта (не утекает в контекст LLM)
+- Validation is being carried out **escaping CLI** beforehand `fs.writeFile` — single-point
+- Normalization through `path.resolve`, Not regular, the OS knows its file system better.
+- Nana Windows: `path.resolve` handle `/` and `\`, But the prefix check should be case-insensitive (NTFS)
+- Simlinka: `fs.realpath` before prefix check - Simlink, rootless, erode
+- `ERROR` contain **path, which agent requested**, but **not** The absolute root path of the project (slipping into context LLM)
 
 ## Dependencies
-`spec_message_bus_types`, `spec_plan_execution` (для проверки владения — **PR-8**, уровень-3 включается там)
+`spec_message_bus_types`, `spec_plan_execution` (possession-check — **PR-8**, level-3 switches on)
 
-> **Порядок PR (уровень-3).** Уровни 1–2 (path traversal, защищённые пути) самодостаточны — реализуются в PR-7. Уровень-3 (владение по `PlanStep.files`) требует `spec_plan_execution` из PR-8, включается там же. В PR-7 при отсутствии плана уровень-3 просто пропускается (как в yolo-режиме) — поведение не ломается.
+> **Order. PR (level-3).** Levels. 1–2 (path traversal, guarded-way) Self-sufficient - implemented in PR-7. Level.-3 (possession `PlanStep.files`) demand `spec_plan_execution` from PR-8, included. V. PR-7 without a plan, level-3 just slipped (like yolo-mode) — behavior.
 
 ## Tests
 ### Unit
-1. `src/auth.ts` → принят, путь внутри корня
-2. `../../etc/passwd` → отклонён, path traversal
-3. `/freeagent/agents_registry.json` → отклонён, защищённый путь
-4. `.git/hooks/pre-commit` → отклонён
-5. `.env` → отклонён по умолчанию
-6. Путь в `PlanStep.files` → принят; путь вне списка → `ERROR` с перечислением разрешённых
-7. Yolo-режим: уровень 3 не проверяется
-8. Симлинк `src/link → /etc/` → `fs.realpath` → отклонён
-9. Windows: `SRC\Auth.ts` при корне `C:\project` → принят (case-insensitive)
+1. `src/auth.ts` → accepted, root-way
+2. `../../etc/passwd` → rejected, path traversal
+3. `/freeagent/agents_registry.json` → rejected, guarded
+4. `.git/hooks/pre-commit` → rejected
+5. `.env` → default
+6. The way `PlanStep.files` → accepted; off-list → `ERROR` listing
+7. Yolo-regime: level 3 untested
+8. simlink `src/link → /etc/` → `fs.realpath` → rejected
+9. Windows: `SRC\Auth.ts` root `C:\project` → accepted (case-insensitive)
 
 ### Integration check
-Агент шлёт `WRITE` с тремя путями: валидный, traversal, вне плана → первый записан, два других отклонены с корректными `ERROR`
+Agent sends. `WRITE` three-way: valid, traversal, plan → first-hand, The other two were rejected with correctness. `ERROR`
 
 ### Definition of done
-- Тесты зелёные на Linux и Windows (или WSL)
-- Ни одна запись на диск не проходит мимо валидации
-- Прогон integration check'ов предыдущих PR
+- Tests green on Linux and Windows (or WSL)
+- No record on the disc passes the validation.
+- Run. integration check'previous PR

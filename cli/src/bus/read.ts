@@ -7,7 +7,7 @@ import { makeBatchFromContent, type Batch, type BusFileSource } from '../../../s
 
 export type { BusLine, Batch, BusFileSource } from '../../../shared/bus-source.ts';
 
-// NodeFsSource — реализация BusFileSource для CLI (PR-1). FsaSource (extension) — shared/bus-source.ts + extension/src/bus (PR-2).
+// NodeFsSource - implementation of BusFileSource for CLI (PR-1). FsaSource (extension) - shared/bus-source.ts + extension/src/bus (PR-2).
 export class NodeFsSource implements BusFileSource {
   private readonly filePath: string;
 
@@ -21,7 +21,7 @@ export class NodeFsSource implements BusFileSource {
   }
 
   async *watch(): AsyncGenerator<Batch> {
-    yield await this.readBatch(); // содержимое, уже лежащее на диске к моменту старта
+    yield await this.readBatch(); // contents already on disk at the time of start
     for await (const _event of watchFile(this.filePath)) {
       yield await this.readBatch();
     }
@@ -72,11 +72,11 @@ export class BusReader {
           await this.saveCursor(cursor);
           continue;
         }
-        // Курсор сохраняется ПОСЛЕ yield: at-least-once. Возврат управления в генератор
-        // (следующий next()) означает, что потребитель обработал текущее сообщение — это
-        // и есть точка подтверждения. Если потребитель упадёт после yield, но до следующего
-        // next(), курсор не продвинется, и на рестарте сообщение переиграется — дубли гасит
-        // дедуп по id в write.ts. Потеря TASK/RESULT опаснее дубля.
+        // The cursor is saved AFTER yield: at-least-once. Returning control to the generator
+        // (next next()) means that the consumer has processed the current message - this is
+        // and there is a confirmation point. If the consumer fails after yield but before the next one
+        // next(), the cursor will not move, and on restart the message will be replayed - it extinguishes duplicates
+        // dedup by id in write.ts. The loss of TASK/RESULT is more dangerous than a double.
         yield parsed.msg;
         cursor = line.position;
         await this.saveCursor(cursor);

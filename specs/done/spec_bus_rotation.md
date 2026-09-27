@@ -1,68 +1,68 @@
 # Spec: bus_rotation
 # Version: 1.0
-# Читать вместе с ARCHITECTURE.md (§4 шина, курсоры по seq)
+# Read along with ARCHITECTURE.md (§4 bus, cursors by seq)
 
 ## Goal
-Главная шина `message_bus.jsonl` растёт бесконечно при долгих сессиях. Ротация: архивировать старое, не ломая курсоры и не теряя сообщений.
+The main bus `message_bus.jsonl` grows infinitely during long sessions. Rotation: archive old ones without breaking cursors or losing messages.
 
 ## Input
-- `message_bus.jsonl` с N сообщениями
-- порог ротации (по размеру или количеству строк)
+- `message_bus.jsonl` with N messages
+- rotation threshold (by size or number of lines)
 
 ## Output
-- `message_bus.jsonl` содержит только сообщения после точки ротации
-- `message_bus_archive/bus_<timestamp>.jsonl.gz` — заархивированная часть
-- курсоры всех читателей продолжают работать без повторной обработки и без пропусков
+- `message_bus.jsonl` contains only messages after the rotation point
+- `message_bus_archive/bus_<timestamp>.jsonl.gz` — archived part
+- all readers' cursors continue to work without reprocessing and without gaps
 
 ## Contract
 
-### Почему курсоры выживают
-Курсоры главной шины хранят **`seq`**, а не номер строки и не байтовый offset (решение зафиксировано в ARCHITECTURE §4). `seq` — глобальный, монотонно растущий, уникальный. После ротации новый `message_bus.jsonl` начинается с `seq` = N+1, и курсор с `seq` = N-50 просто не находит старых сообщений — это корректное поведение, а не ошибка: сообщения уже были обработаны.
+### Why cursors survive
+Main bus cursors store **`seq`**, not line number or byte offset (decision fixed in ARCHITECTURE §4). `seq` - global, monotonically growing, unique. After rotation, the new `message_bus.jsonl` starts with `seq` = N+1, and the cursor with `seq` = N-50 simply does not find the old messages - this is correct behavior, not an error: the messages have already been processed.
 
-### Процедура ротации
+### Rotation procedure
 ```
-1. CLI берёт lock (тот же message_bus.lock)
-2. Читает текущий файл целиком
-3. Определяет точку разреза: все сообщения до seq X → архив, после → остаются
-4. Записывает архив в message_bus_archive/bus_<ts>.jsonl.gz
-5. Перезаписывает message_bus.jsonl оставшимися строками
-6. Отпускает lock
+1. CLI takes lock (same message_bus.lock)
+2. Reads the current file entirely
+3. Defines the cutting point: all messages before seq X → archive, after → remain
+4. Writes the archive to message_bus_archive/bus_<ts>.jsonl.gz
+5. Rewrites message_bus.jsonl with the remaining lines
+6. Releases the lock
 ```
 
-Атомарность: шаги 4–5 под lock, и архив пишется **до** перезаписи основного файла. При падении между 4 и 5 — архив есть, основной файл не тронут, ротация повторяется.
+Atomicity: steps 4–5 under lock, and the archive is written **before** the main file is rewritten. If it falls between 4 and 5, the archive is there, the main file is not touched, the rotation is repeated.
 
-### Точка разреза
-- По умолчанию: ротация при `message_bus.jsonl` > 5 MB (конфигурируемо)
-- Точка разреза: оставить последние 1000 сообщений (или сообщения за последний час — что больше)
-- Не разрезать посередине транзакции: если последний TASK до точки разреза не имеет RESULT — сдвинуть точку назад, чтобы пара TASK–RESULT осталась вместе
+### Cut point
+- Default: rotation when `message_bus.jsonl` > 5 MB (configurable)
+- Cutting point: leave the last 1000 messages (or messages for the last hour - whichever is more)
+- Do not cut in the middle of the transaction: if the last TASK before the cut point does not have a RESULT, move the point back so that the TASK-RESULT pair remains together
 
-### Incoming-файлы
-`incoming/<instance_id>.jsonl` **не ротируются** — CLI вычитал и записал в главную шину, содержимое incoming-файла можно обнулить (truncate). Курсоры incoming — по номеру строки, truncate сбрасывает их в 0.
+### Incoming files
+`incoming/<instance_id>.jsonl` **not rotated** - CLI read and wrote to the main bus, the contents of the incoming file can be reset to zero (truncate). Incoming cursors - by line number, truncate resets them to 0.
 
 ## Constraints
-- Ротация выполняется **только CLI** (единственный writer главной шины)
-- Ротация не прерывает активную работу — курсоры после ротации валидны
-- Архивы read-only, предназначены для диагностики, не для чтения агентами
-- gzip — стандартный, без дополнительных зависимостей (`zlib` встроен в Node.js)
-- При первом запуске после ротации: читатель с курсором на `seq` из архива → продолжает с первого `seq` в текущем файле, warning «пропущено N сообщений (в архиве)»
+- Rotation is performed **CLI only** (the only writer on the main bus)
+- Rotation does not interrupt active work - cursors are valid after rotation
+- Archives are read-only, intended for diagnostic purposes, not for reading by agents
+- gzip - standard, without additional dependencies (`zlib` is built into Node.js)
+- On first launch after rotation: reader with cursor on `seq` from the archive → continues from the first `seq` in the current file, warning “N messages missed (in archive)”
 
 ## Dependencies
 `spec_message_bus_read`, `spec_message_bus_write`, `spec_cli`
 
 ## Tests
 ### Unit
-1. Шина > 5 MB → ротация, архив создан, основной файл содержит последние 1000 сообщений
-2. Курсор на `seq` 500, ротация убрала до `seq` 400 → читатель продолжает с 501, ничего не пропущено
-3. Курсор на `seq` 200, ротация убрала до `seq` 400 → читатель начинает с `seq` 401, warning выведен
-4. TASK без RESULT перед точкой разреза → точка сдвинута, пара осталась вместе
-5. Падение между записью архива и перезаписью основного → повторная ротация безопасна (архив уже есть, основной нетронут)
-6. Incoming truncate → курсор сброшен в 0, следующее чтение начинается сначала
-7. Конфигурируемый порог из `freeagent.config.json`
+1. Bus > 5 MB → rotation, archive created, main file contains the last 1000 messages
+2. Cursor on `seq` 500, rotation removed to `seq` 400 → reader continues with 501, nothing missing
+3. Cursor on `seq` 200, rotation removed to `seq` 400 → reader starts with `seq` 401, warning displayed
+4. TASK without RESULT before the cut point → the point is shifted, the pair remains together
+5. Fall between recording the archive and overwriting the main one → re-rotation is safe (the archive is already there, the main one is untouched)
+6. Incoming truncate → cursor is reset to 0, next reading starts over
+7. Configurable threshold from `freeagent.config.json`
 
 ### Integration check
-Записать 10 000 сообщений → ротация → продолжить запись → читатель не пропустил ни одного послеротационного сообщения
+Record 10,000 messages → rotation → continue recording → the reader has not missed a single post-rotation message
 
 ### Definition of done
-- Тесты зелёные
-- Ротация под lock, при падении данные не теряются
-- Прогон integration check'ов предыдущих PR
+- Tests are green
+- Rotation under lock, data is not lost if it falls
+- Running integration checks of previous PRs

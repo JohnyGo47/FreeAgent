@@ -1,59 +1,59 @@
 # Spec: response_health
-# Version: 1.0 — заменяет spec_service_unavailable_handling
-# Читать вместе с ARCHITECTURE.md (§6 наблюдение, §7 бэкапы)
+# Version: 1.0 — substitute spec_service_unavailable_handling
+# Reading with ARCHITECTURE.md (§6 observation, §7 backup)
 
 ## Goal
-Классифицировать ответ, который пришёл, но не является рабочим, и применить нужное лекарство. Четыре класса — четыре реакции.
+Classification of response, came, but not a worker, and apply the right medicine.. Four classes: four reactions.
 
 ## Input
-- Текст ответа из DOM + результат `fromTagFormat`
-- `failure_patterns` и `context_window` адаптера
-- Счётчик символов треда
+- Text of the reply DOM + result `fromTagFormat`
+- `failure_patterns` and `context_window` adapter
+- The trader's symbol counter
 
 ## Output
-- `RESPONSE_HEALTH` в incoming с классом и фрагментом сырого текста
-- Реакция CLI по классу
+- `RESPONSE_HEALTH` escaping incoming classy
+- Reaction CLI classwise
 
 ## Contract
 
-| Класс | Признак | Реакция CLI |
+| Class class | Sign. | Reaction CLI |
 |---|---|---|
-| `unavailable` | паттерн из `failure_patterns.unavailable` | backoff 30/60/120с, переотправка в **ту же вкладку** |
-| `rate_limited` | паттерн `rate_limited` | переключение на бэкап (`spec_backup_agents`) |
-| `context_full` | паттерн `context_full` **или** счётчик ≥ порога | переключение на бэкап |
-| `no_tags` | ответ < 200 символов **и** `fromTagFormat` пуст | переспросить с напоминанием формата, **максимум 3 попытки**, потом `NOTIFY` пользователю |
+| `unavailable` | pattern `failure_patterns.unavailable` | backoff 30/60/120s, forwarding **tab** |
+| `rate_limited` | pattern `rate_limited` | backup (`spec_backup_agents`) |
+| `context_full` | pattern `context_full` **or** counter ≥ threshold | backup |
+| `no_tags` | reply < 200 symbolism **and** `fromTagFormat` empty | ask back with a format reminder, **maximum 3 try**, later `NOTIFY` user |
 
-**Эвристика `no_tags`:** один раз — не триггер (модель могла не понять промпт), два подряд — триггер.
+**Heuristics `no_tags`:** once-not-trigger (The model may not have understood the prompt), two in a row, trigger.
 
 ## Constraints
-- **Детект в расширении** (оно видит DOM), **таймеры и решения в CLI** (правило MV3, ARCHITECTURE §5)
-- Счётчик `service_unavailable_attempts` независим от счётчика recovery — недоступность сервиса не должна списывать попытки, предназначенные для сбоев агента
-- Backoff-параметры конфигурируемы в `freeagent.config.json` (значения по умолчанию требуют калибровки на реальных Kimi/Grok)
-- Пока идёт backoff, статус `SERVICE_DOWN` — `spec_agent_recovery` этот статус игнорирует
-- После исчерпания backoff: `NOTIFY` пользователю со списком кандидатов = **все сервисы из registry кроме упавшего** (фильтрации по ролям нет — адаптеры привязаны к доменам, не к ролям; выбирает пользователь)
-- Задача не переназначается автоматически — только по явному выбору пользователя
-- Переподключение: тот же `agent_id`, та же роль, новый `llm_url`; оркестратор не уведомляется
+- **Detection in expansion** (see DOM), **timers and decisions in CLI** (rule MV3, ARCHITECTURE §5)
+- Counter. `service_unavailable_attempts` counter-independent recovery — Inaccessibility of the service should not cancel attempts, fault-proof
+- Backoff-parameters are configured in `freeagent.config.json` (Default values require calibration to real Kimi/Grok)
+- While it's going backoff, status `SERVICE_DOWN` — `spec_agent_recovery` That status is ignored
+- After exhaustion backoff: `NOTIFY` list-list = **service-wise registry except for the fallen** (No role filtering – adapters are tied to domains, roleless; select)
+- The task is not automatically reassigned – only at the explicit choice of the user.
+- Reconnect.: same `agent_id`, role, new `llm_url`; orchestrator not notified
 
 ## Dependencies
 `spec_message_bus_types`, `spec_llm_adapter_registry`, `spec_init_agent`
 
-> `response_health` классифицирует ответ и пишет `RESPONSE_HEALTH` в шину. **Что делать дальше** решает CLI: для `rate_limited`/`context_full` вызывает логику из `spec_backup_agents`, для `unavailable` — backoff. Обратной зависимости нет: `response_health` не знает про бэкапы.
+> `response_health` classify the answer and write `RESPONSE_HEALTH` tire-wire. **What to do next** decider CLI: for `rate_limited`/`context_full` logicizes `spec_backup_agents`, for `unavailable` — backoff. There is no inverse dependence.: `response_health` He doesn't know about backups..
 
 ## Tests
 ### Unit
-1. Каждый из четырёх классов детектируется по своему признаку
-2. `no_tags`: один раз — не триггер, два подряд — триггер
-3. Backoff: 3 попытки с нарастающей паузой, счётчик recovery не меняется
-4. `context_full` по счётчику (без паттерна) → переключение на бэкап
-5. Кандидаты после исчерпания backoff — все сервисы кроме упавшего
-6. `no_tags` три раза подряд → `NOTIFY` пользователю с описанием проблемы и сервиса, четвёртая попытка не делается
-7. Оркестратор не получает сообщений о смене сервиса
+1. Each of the four classes is detected by its own characteristics.
+2. `no_tags`: once-not-trigger, two in a row, trigger
+3. Backoff: 3 pause-and-pause, counter recovery change
+4. `context_full` counter-meter (patternless) → backup
+5. Post-exhaustion candidates backoff — all services except the fallen
+6. `no_tags` three-time → `NOTIFY` User with a description of the problem and service, fourth attempt is not made
+7. Orchestra receives no messages about changing service
 
 ### Integration check
-Симулировать текст отказа Kimi → backoff → выбор замены в CLI → агент переподключён, задача продолжена
+Simulate the text of refusal Kimi → backoff → substitution CLI → reconnector, task
 
 ### Definition of done
-- Тесты зелёные
-- `SERVICE_DOWN` отличим от `FAILED` в выводе `freeagent agents`
-- Backoff и heartbeat-recovery никогда не срабатывают одновременно по одному агенту
-- Прогон integration check'ов предыдущих PR
+- Tests green.
+- `SERVICE_DOWN` distinguishable `FAILED` conclusionally `freeagent agents`
+- Backoff and heartbeat-recovery They never work at the same time with one agent.
+- Run. integration check'previous PR

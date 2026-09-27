@@ -1,5 +1,5 @@
-// validateMemory (spec_md_memory_template): проверка полноты MEMORY.md. Pure — без fs, годится
-// и для CLI, и для инлайна в браузерный бандл.
+// validateMemory (spec_md_memory_template): check the completeness of MEMORY.md. Pure - no fs, good
+// both for the CLI and for inline in the browser bundle.
 
 export interface MemoryValidation {
   ok: boolean;

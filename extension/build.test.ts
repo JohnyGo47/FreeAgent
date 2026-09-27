@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const extensionDir = fileURLToPath(new URL('.', import.meta.url));
 
-test('esbuild собирает 4 бандла, /shared импортируется и инлайнится', async () => {
+test('esbuild builds 4 bundles, /shared is imported and inlined', async () => {
   const outdir = await mkdtemp(join(tmpdir(), 'freeagent-ext-build-'));
   try {
     await esbuild.build({
@@ -33,10 +33,10 @@ test('esbuild собирает 4 бандла, /shared импортируетс�
     for (const name of ['background', 'content', 'popup', 'offscreen']) {
       const content = await readFile(join(outdir, `${name}.js`), 'utf8');
       assert.ok(content.length > 0, `${name}.js is empty`);
-      // spec_init_agent: реестр агентов пишет только CLI, расширение — никогда (ARCHITECTURE §2).
-      // Имя файла agents_registry.json легитимно попадает в бандл как часть STRUCTURE_FILES
-      // (shared/bus-structure.ts, нужно для создания структуры папки) — проверяем отсутствие
-      // самой функции-писателя, а не имени файла.
+      // spec_init_agent: the agent registry writes only the CLI, the extension never (ARCHITECTURE §2).
+      // The file name agents_registry.json is legitimately included in the bundle as part of STRUCTURE_FILES
+      // (shared/bus-structure.ts, needed to create a folder structure) - check the absence
+      // the writer function itself, not the file name.
       assert.ok(!content.includes('saveRegistry'), `${name}.js must not bundle the registry writer (saveRegistry)`);
     }
 

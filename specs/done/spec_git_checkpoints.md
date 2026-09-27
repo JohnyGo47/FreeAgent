@@ -1,44 +1,44 @@
-# Spec: git_checkpoints
+# Spec: git checkpoints
 # Version: 2.0
-# Читать вместе с ARCHITECTURE.md (§10 параллелизм, §11 агенты не пишут на диск)
+# Read with ARCHITECTURE.md (§10 concurrency, §11 agents do not write to disc)
 
-## Goal
-Каждый значимый шаг агентов фиксируется автоматическим коммитом. `/undo` откатывает одной командой. Снимает страх «агенты разнесут проект».
+#Goal
+Every significant step of the agents is recorded by an automatic commit. `/undo` rolls back with one team. The fear of “agents will destroy the project” is removed.
 
-## Input
-События шины: первый `WRITE` в рамках `task_id`, `RESULT: DONE` после успешной верификации
+#Input
+Bus Events: First `WRITE` in `task_id`, `RESULT: DONE` after successful verification
 
-## Output
-- Коммиты `freeagent: pre-task {task_id}` и `freeagent: {task_id} — {summary}`
-- `/undo` → `git revert` (не reset — история пользователя неприкосновенна)
-- `freeagent log` — чекпоинты с task_id и датами
+#Output
+- Commitments `freeagent: pre-task {task_id}` and `freeagent: {task_id} — {summary}`
+`/undo` → `git revert` (not reset – user history is inviolable)
+`freeagent log` – Checkpoints with task id and dates
 
-## Constraints
-- **Коммит захватывает только файлы, заявленные в `files` своего шага плана** — благодаря контролю владения (ARCHITECTURE §10) параллельные шаги пишут в непересекающиеся файлы, поэтому одновременные `DONE` не смешивают историю
-- Явный `git add <пути из WRITE>` — никогда `git add .`, никогда не трогать staged-изменения пользователя
-- Не коммитить: `/freeagent/`, файлы из privacy-исключений. `/freeagent/` добавляется в `.gitignore` при `init`
-- Не-git проект: при `init` предложить `git init`; при отказе — чекпоинты отключены, **постоянный warning в TUI** (не молчать)
-- `/undo` при конфликте revert — остановиться, показать конфликт, не резолвить автоматически
-- `checkpoint_branch: true` — коммиты в отдельную ветку; по умолчанию `false` (в текущую, проще и видно)
-- Реализация через `child_process git` — git у целевой аудитории есть, libgit2-биндинги не нужны
+##Constraints
+*Committ captures only files claimed in `files` of its plan step** – thanks to ownership control (ARCHITECTURE §10), parallel steps are written into non-intersecting files, so simultaneous `DONE` do not mix the story
+- Explicit `git add <path WRITE>` - never `git add .`, never touch staged user changes
+- Do not commit: `/freeagent/`, files from privacy exceptions. `/freeagent/` added to `.gitignore` at `init`
+- Non-git project: `init` offers `git init`; if you refuse - checkpoints are disabled, **permanent warning in TUI** (don't be silent)
+`/undo` in a revert conflict - stop, show the conflict, do not resolve automatically
+`checkpoint_branch: true` - commits to a separate branch; by default `false` (in the current, simpler and visible)
+- Implementation through `child_process git` - git the target audience has, libgit2-binding is not necessary
 
 ## Dependencies
-`spec_message_bus_read`, `spec_cli`, `spec_plan_execution` (источник списка `files`), git в PATH
+`spec_message_bus_read`, `spec_cli`, `spec_plan_execution` (`files` list source), git in PATH
 
 ## Tests
-### Unit
-1. `WRITE` → `DONE` → два коммита с верными префиксами, только затронутые файлы
-2. `/undo` откатывает последний чекпоинт, файлы возвращаются к pre-task состоянию
-3. `/undo <task_id>` при трёх задачах откатывает только указанную
-4. Staged-изменения пользователя не попадают в чекпоинт
-5. **Два параллельных шага завершаются одновременно → два коммита, файлы не перемешаны**
-6. Не-git проект: warning показан, `WRITE` работает, ничего не падает
-7. `/freeagent/` отсутствует во всех чекпоинтах
+################################################################################################################################################################################################################################################################
+1. `WRITE` → `DONE` → Two commits with correct prefixes, only affected files
+2. `/undo` rolls back the last checkpoint, files return to pre-task state
+3. `/undo <task_id>` rolls back only the specified number for three tasks.
+4. Staged changes to the user do not fall into checkpoint
+5. **Two parallel steps are completed simultaneously → two commits, files are not mixed**
+6. Non-git project: warning shown, `WRITE` works, nothing falls
+7. `/freeagent/` is not available in all checkpoints
 
-### Integration check
-Агент пишет файл с багом → `DONE` → `/undo` → файл вернулся, история пользователя цела
+###Integration check
+Agent writes bug file → `DONE` → `/undo` → file is back, user history is intact
 
-### Definition of done
-- Тесты зелёные
-- Параллельные `DONE` не создают перемешанных коммитов
-- Прогон integration check'ов предыдущих PR
+###Definition of done
+- The tests are green.
+Parallel `DONE` does not create mixed commits.
+- Run integration checks of previous PR

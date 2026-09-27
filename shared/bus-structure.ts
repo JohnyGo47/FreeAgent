@@ -1,5 +1,5 @@
-// Структура /freeagent/ — общая для CLI (создаёт при `init`) и расширения (FolderAccessService).
-// 6 файлов + 6 директорий = 12 позиций (STACK.md, spec_fs_folder_access, spec_cli_init).
+// The /freeagent/ structure is common to the CLI (created at `init`) and the extension (FolderAccessService).
+// 6 files + 6 directories = 12 positions (STACK.md, spec_fs_folder_access, spec_cli_init).
 
 export const STRUCTURE_FILES = [
   'message_bus.jsonl',

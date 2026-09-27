@@ -1,7 +1,7 @@
-// parseFsCall (spec_file_access v1.1): текст → {op,args} + heredoc-тело до end:-маркера.
-// Отдельно от fromTagFormat (/shared/bus-types) — та инлайнится в браузерный бандл и снимает
-// бэктики/парсит JSON тело; здесь тело read дословно (write/edit — код с `|`/бэктиками/тегами
-// внутри не должен ломаться), и парсер живёт только в CLI (disk-логика).
+// parseFsCall (spec_file_access v1.1): text → {op,args} + heredoc body to end: marker.
+// Separately from fromTagFormat (/shared/bus-types) - it is inlined into the browser bundle and removes
+// backticks/parses JSON body; here the read body is verbatim (write/edit - code with `|`/backticks/tags
+// should not break inside), and the parser lives only in the CLI (disk logic).
 import type { FsCallArgs } from './dispatch.ts';
 
 const HEADER_RE = /\[FS\s*\|([\s\S]*?)\]/g;
@@ -64,7 +64,7 @@ export function parseFsCall(text: string): ParseFsResult {
       const bodyStart = text[headerEnd] === '\n' ? headerEnd + 1 : headerEnd;
       const marker = findMarkerLine(text, bodyStart, attrs.end);
       if (!marker) {
-        // маркер не найден — незакрытый вызов, тело недоступно, останавливаем сканирование
+        // token not found - unclosed call, body unavailable, stop scanning
         calls.push({ args: { op, ...attrs } });
         break;
       }

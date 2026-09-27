@@ -1,6 +1,6 @@
-// IndexedDB — единственное хранилище, переживающее рестарт браузера для FSA-хэндлов
-// (chrome.storage их не умеет сериализовать). Тонкая обёртка, без юнит-теста:
-// это чистый IndexedDB-boilerplate, реальный доступ проверяется ручным integration check'ом спеки.
+// IndexedDB is the only storage that survives browser restarts for FSA handles
+// (chrome.storage cannot serialize them). Thin wrapper, no unit test:
+// this is a pure IndexedDB-boilerplate, real access is checked by the spec's manual integration check.
 import type { HandleStore } from './folderAccessService.ts';
 
 const DB_NAME = 'freeagent';

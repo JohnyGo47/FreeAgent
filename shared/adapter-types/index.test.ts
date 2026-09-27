@@ -40,7 +40,7 @@ test('adapter without failure_patterns fails schema validation', () => {
       'broken.example.com': {
         domain: 'broken.example.com',
         selectors: { input: ['x'], submit: ['x'], response_container: ['x'], typing_indicator: null },
-        // failure_patterns отсутствует
+        // failure_patterns missing
         max_retries: 3,
         needs_auth: true,
       },
@@ -64,4 +64,11 @@ test('all 11 default services pass schema validation', async () => {
   assert.deepEqual(result, { ok: true });
   assert.equal(Object.keys(registry.adapters).length, 11);
   assert.equal('www.01.ai' in registry.adapters, false);
+});
+
+test('ChatGPT response selector is independent of the rendered element tag', async () => {
+  const registry = await loadDefaultRegistry();
+  assert.equal(registry.adapters['chatgpt.com'].selectors.response_container[0], '[data-message-author-role="assistant"]');
+  assert.ok(registry.adapters['chatgpt.com'].selectors.input.includes('#prompt-textarea'));
+  assert.ok(registry.adapters['chatgpt.com'].selectors.submit.includes('#composer-submit-button'));
 });

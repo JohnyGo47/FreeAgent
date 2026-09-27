@@ -4,10 +4,10 @@ import { parsePlanText, validatePlan, planRetryOutcome, buildPlanRetryMessage } 
 
 const VALID_PLAN = [
   '[PLAN]',
-  'STEP 1 | researcher1 | Найти лучшие практики JWT-авторизации | FILES: research/jwt.md | DEPENDS: none',
-  'STEP 2 | coder1 | Написать middleware авторизации | FILES: src/auth.ts, src/auth.test.ts | DEPENDS: 1',
-  'STEP 3 | coder2 | Написать модель пользователя | FILES: src/user.ts, src/user.test.ts | DEPENDS: none',
-  'STEP 4 | coder1 | Интегрировать auth и user в роутер | FILES: src/router.ts | DEPENDS: 2, 3',
+  'STEP 1 | researcher1 | Find JWT authorization best practices | FILES: research/jwt.md | DEPENDS: none',
+  'STEP 2 | coder1 | Write authorization middleware | FILES: src/auth.ts, src/auth.test.ts | DEPENDS: 1',
+  'STEP 3 | coder2 | Write a user model | FILES: src/user.ts, src/user.test.ts | DEPENDS: none',
+  'STEP 4 | coder1 | Integrate auth and user into the router | FILES: src/router.ts | DEPENDS: 2, 3',
   '[/PLAN]',
 ].join('\n');
 
@@ -19,7 +19,7 @@ test('a valid [PLAN] block parses into a PlanPayload with all steps', () => {
     assert.deepEqual(result.plan.steps[1], {
       step_id: 2,
       agent_id: 'coder1',
-      description: 'Написать middleware авторизации',
+      description: 'Write authorization middleware',
       files: ['src/auth.ts', 'src/auth.test.ts'],
       depends_on: [1],
     });
@@ -56,10 +56,10 @@ test('a dependency cycle is rejected before the plan reaches the user', () => {
   if (!result.ok) assert.match(result.error, /cycle/i);
 });
 
-// ARCHITECTURE §10: "Пересечение → последовательное исполнение", не отказ. Роль-текст
-// spec_md_orchestrator раньше говорил строже ("два шага не могут трогать один файл") — приведён
-// к архитектуре в ревизии PR-8. validatePlan больше не отклоняет план из-за пересечения files;
-// это сигнал расписания для spec_plan_execution (последовательный запуск), не ошибка валидации.
+// ARCHITECTURE §10: "Intersection → sequential execution", not a failure. Role-text
+// spec_md_orchestrator used to be stricter (“two steps cannot touch the same file”) - given
+// to the architecture in revision PR-8. validatePlan no longer rejects a plan due to a files intersection;
+// this is a schedule signal for spec_plan_execution (sequential execution), not a validation error.
 test('two steps claiming the same file pass validation — overlap is a scheduling signal, not a validation error', () => {
   const overlap = parsePlanText(
     ['[PLAN]', 'STEP 1 | coder1 | a | FILES: shared.ts | DEPENDS: none', 'STEP 2 | coder2 | b | FILES: shared.ts | DEPENDS: none', '[/PLAN]'].join(

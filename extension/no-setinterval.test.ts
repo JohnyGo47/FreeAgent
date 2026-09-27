@@ -4,7 +4,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// CI-проверка из spec_ext_manifest: setInterval легален только в src/content/ (ARCHITECTURE §5).
+// CI check from spec_ext_manifest: setInterval is only legal in src/content/ (ARCHITECTURE §5).
 async function listTsFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const files: string[] = [];

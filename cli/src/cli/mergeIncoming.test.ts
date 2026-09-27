@@ -15,7 +15,7 @@ async function tmpDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'freeagent-mergeincoming-'));
 }
 
-test('merge собирает из нескольких incoming в правильном порядке с монотонным seq', async (t) => {
+test('merge collects from several incomings in the correct order with monotonic seq', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
   const incomingDir = join(dir, 'incoming');
@@ -50,7 +50,7 @@ test('re-scanning the same unchanged incoming files does not duplicate entries (
   assert.equal(busLines.length, 1);
 });
 
-test('incoming truncate после успешного мержа: файл пуст, следующее чтение начинается с чистого листа (spec_bus_rotation)', async (t) => {
+test('incoming truncate after successful merge: file is empty, next read starts from scratch (spec_bus_rotation)', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
   const incomingDir = join(dir, 'incoming');
@@ -62,7 +62,7 @@ test('incoming truncate после успешного мержа: файл пу�
   await scanIncoming(incomingDir, writer);
   assert.equal(await readFile(filePath, 'utf8'), '');
 
-  // "курсор сброшен в 0": новая запись в тот же файл после truncate мержится с нуля, не считается дублем.
+  // "cursor reset to 0": a new entry to the same file after truncate is merged from scratch and is not considered a duplicate.
   await writeFile(filePath, line('a-2', 'browser_a') + '\n', 'utf8');
   const { appended } = await scanIncoming(incomingDir, writer);
   assert.equal(appended, 1);

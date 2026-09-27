@@ -1,5 +1,5 @@
-// Единственный экземпляр FolderAccessService на расширение — общий для popup и offscreen
-// через IndexedDB (её содержимое общее для всех контекстов одного origin расширения).
+// The only instance of FolderAccessService per extension - common for popup and offscreen
+// via IndexedDB (its contents are common to all contexts of one origin extension).
 import { FolderAccessService } from './folderAccessService.ts';
 import { idbHandleStore } from './idbHandleStore.ts';
 

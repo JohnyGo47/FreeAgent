@@ -1,21 +1,49 @@
-// initializeAgent (spec_init_agent): один код для пиннинга (флоу А) и программного открытия
-// (флоу Б) — оба заканчиваются REGISTER_REQUEST → CLI присваивает agent_id → инжект INIT.
+// initializeAgent (spec_init_agent): one path handles both pinning (flow A) and
+// soft opening (flow B). Both end with REGISTER_REQUEST, agent assignment, and INIT.
 import { randomUUID } from 'node:crypto';
 import type { AgentsRegistry, RegisteredAgent } from '../registry/registry.ts';
 import type { BusMessage, CommandPayload, NotifyPayload, RegisterPayload } from '../../../shared/bus-types/index.ts';
 import type { Delivery } from '../cli/router.ts';
 
-// agent_id = <role><N>, N — минимальный свободный номер для роли (освободившийся номер переиспользуется).
+const AGENT_PROTOCOL = `## FreeAgent Protocol
+
+Files are only accessible through a separate response in the format \`[FS | op: read | path: package.json]\`.
+For a list use \`[FS | op: list | path: . | depth: 2]\`; for search use \`[FS | op: search | query: text | path: .]\`.
+To write, use a separate heredoc block:
+\`[FS | op: write | path: file | kind: doc | end: ---FS_END---]
+content
+---FS_END---\`
+After the FS request, wait for \`[FS_RESULT]\` and only then continue. Don't send READ/WRITE messages.
+
+Send the completion of the task in a block:
+\`[MSG | to: orchestrator | type: RESULT]
+{"task_id":"received task_id","status":"DONE","summary":{"result":"short actual result"}}
+[/MSG]\`
+Always make the \`summary\` field a JSON object, not a string. Don't put unescaped quotes in JSON strings.
+
+If the task requires running tests, send before RESULT:
+\`[MSG | to: cli | type: TESTS_READY]
+{"task_id":"received task_id","command":"npm test"}
+[/MSG]\`
+Immediately after TESTS_READY send RESULT. Don't wait for a separate TESTS_RESULT: the CLI will run the command and check the exit code itself when processing the RESULT.`;
+
+// agent_id = <role><N>, N is the minimum free number for the role (the free number is reused).
 export function nextAgentId(registry: AgentsRegistry, role: string): string {
+  if (role === 'orchestrator') return 'orchestrator';
+  const reusable = Object.values(registry)
+    .filter((agent) => agent.role === role && ['SERVICE_DOWN', 'FAILED', 'INIT_FAILED'].includes(agent.status))
+    .map((agent) => agent.agent_id)
+    .sort((a, b) => Number(a.slice(role.length)) - Number(b.slice(role.length)))[0];
+  if (reusable) return reusable;
   let n = 1;
   while (`${role}${n}` in registry) n++;
   return `${role}${n}`;
 }
 
 export function buildInitPrompt(agentId: string, role: string, roleMd: string, extraContext?: string): string {
-  const lines = [`[INIT: ${agentId}]`, `Ты — ${role}. Работаешь в системе FreeAgent.`, roleMd];
+  const lines = [`[INIT: ${agentId}]`, `You are ${role}. You work in the FreeAgent system.`, roleMd, AGENT_PROTOCOL];
   if (extraContext) lines.push(extraContext);
-  lines.push('Ответь [READY] когда готов принимать задачи.', '[/INIT]');
+  lines.push('Reply [READY] when ready to accept tasks.', '[/INIT]');
   return lines.join('\n');
 }
 
@@ -25,7 +53,7 @@ export interface RegisterParams {
   instanceId: string;
   roleMd: string;
   now: string;
-  authBlocked: boolean; // true когда для флоу инжекта не резолвится input-селектор — вероятная login-форма
+  authBlocked: boolean; // true when the input selector does not resolve for the flow injection - probable login form
   extraContext?: string;
 }
 
@@ -64,7 +92,7 @@ export function registerAgent(params: RegisterParams): RegisterOutcome {
   return { registry: nextRegistry, toCommand: { instanceId, message } };
 }
 
-// Таймаут ожидания READY (Constraints: 60с → INIT_FAILED; это не recovery-FAILED, recovery-попытки не тратятся).
+// A READY timeout moves the agent to INIT_FAILED without consuming recovery attempts.
 export function checkInitTimeouts(registry: AgentsRegistry, nowMs: number, timeoutMs: number): AgentsRegistry {
   let changed = false;
   const next: AgentsRegistry = { ...registry };

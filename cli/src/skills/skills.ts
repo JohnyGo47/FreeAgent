@@ -1,5 +1,5 @@
-// Роли как MD-файлы в /skills/ (spec_skills_system). Захардкоженного списка ролей нет —
-// список строится из frontmatter файлов на диске.
+// Role like MD-file-in /skills/ (spec_skills_system). There is no hard-to-date list of roles —
+// listing frontmatter disk-file.
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentsRegistry } from '../registry/registry.ts';
@@ -7,7 +7,7 @@ import type { AgentsRegistry } from '../registry/registry.ts';
 export interface SkillDef {
   name: string;
   summary: string;
-  roleMd: string; // тело файла без frontmatter — полная роль для INIT-промпта
+  roleMd: string; // file-body frontmatter — full-time INIT-practicum
   filename: string;
 }
 
@@ -74,7 +74,7 @@ export async function loadSkills(skillsDir: string): Promise<SkillLoadResult> {
   return { skills, errors };
 }
 
-// Ростер для оркестратора: agent_id [статус] summary — по одной строке на агента (ARCHITECTURE §8).
+// roster for orchestrator: agent_id [status] summary — one-line (ARCHITECTURE §8).
 export function buildRoster(registry: AgentsRegistry, skills: Pick<SkillDef, 'name' | 'summary'>[]): string {
   const summaryByRole = new Map(skills.map((s) => [s.name, s.summary]));
   return Object.values(registry)

@@ -1,6 +1,6 @@
-// Валидация пути от агента — единственный вход к диску проходит отсюда (ARCHITECTURE §11,
-// spec_write_path_validation). Уровни 1-2 (traversal, защищённые пути) + уровень-3 (владение по
-// PlanStep.files, PR-8) — все три здесь, в одной точке (spec_plan_execution задача C).
+// Validate the path from the agent - the only entrance to the disk is from here (ARCHITECTURE §11,
+// spec_write_path_validation). Levels 1-2 (traversal, protected paths) + level-3 (possession of
+// PlanStep.files, PR-8) - all three are here, at one point (spec_plan_execution task C).
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { fsError, type FsResult } from './types.ts';
@@ -15,13 +15,13 @@ function isWithin(root: string, target: string): boolean {
 
 export type PathCheck = { ok: true; resolved: string } | { ok: false; error: FsResult & { ok: false } };
 
-// Инъекция realpath (по умолчанию — настоящий fs.realpath): symlink-эскейп на Windows без
-// Developer Mode/admin нельзя создать на диске (EPERM), но саму логику "realpath увёл за
-// пределы корня -> PATH_ESCAPE" нужно проверять безусловно на любой платформе — тест подменяет
-// эту функцию, реального симлинка не создавая (spec_write_path_validation Test 8).
+// Realpath injection (default is real fs.realpath): symlink escape on Windows without
+// Developer Mode/admin cannot be created on disk (EPERM), but the logic itself "realpath took away
+// root limits -> PATH_ESCAPE" must be checked unconditionally on any platform - the test replaces
+// this function without creating a real symlink (spec_write_path_validation Test 8).
 export type RealpathFn = (path: string) => Promise<string>;
 
-// Уровень 1: traversal. Используется всеми пятью операциями.
+// Level 1: traversal. Used by all five operations.
 export async function resolveInRoot(root: string, relPath: string, realpathFn: RealpathFn = realpath): Promise<PathCheck> {
   if (typeof relPath !== 'string' || relPath.length === 0) {
     return { ok: false, error: fsError('BAD_ARGS', 'path is required') as FsResult & { ok: false } };
@@ -44,8 +44,8 @@ export async function resolveInRoot(root: string, relPath: string, realpathFn: R
       },
     };
   }
-  // Симлинк может уводить за пределы корня даже когда лексический путь внутри — проверяем,
-  // если путь уже существует (write в новый файл существовать не обязан).
+  // A symlink can lead outside the root even when the lexical path is inside - check that
+  // if the path already exists (write to a new file does not have to exist).
   try {
     const real = await realpathFn(resolved);
     const realRoot = await realpathFn(rootResolved);
@@ -58,13 +58,13 @@ export async function resolveInRoot(root: string, relPath: string, realpathFn: R
       };
     }
   } catch {
-    // путь ещё не существует — ок для write/edit создания нового файла
+    // path does not exist yet - ok for write/edit to create a new file
   }
   return { ok: true, resolved };
 }
 
-// Паттерн-матчинг (PR-7), не точное сравнение сегмента: .env.local / *.pem / node_modules
-// (любой глубины) теперь тоже защищены, список — общая точка истины privacyRules.
+// Pattern matching (PR-7), not exact segment comparison: .env.local / *.pem / node_modules
+// (of any depth) are now also protected, the list is a common point of truth privacyRules.
 function isProtected(root: string, resolved: string): boolean {
   const relFromRoot = resolved.slice(resolve(root).length).replace(/^[\\/]+/, '');
   const segments = relFromRoot.split(/[\\/]/);
@@ -73,9 +73,9 @@ function isProtected(root: string, resolved: string): boolean {
   return matchesSecretPattern(base);
 }
 
-// Уровень 1+2+3: используется только write/edit. ownedFiles — files текущего шага агента из
-// plan_execution; null/undefined значит «плана нет или yolo» — уровень-3 пропускается целиком
-// (spec_write_path_validation §3, "если план не исполняется — уровень 3 пропускается").
+// Level 1+2+3: only write/edit is used. ownedFiles — files of the current agent step from
+// plan_execution; null/undefined means “no plan or yolo” - level-3 is skipped entirely
+// (spec_write_path_validation §3, "if the plan is not executed, level 3 is skipped").
 export async function validateWritePath(root: string, relPath: string, ownedFiles?: string[] | null): Promise<PathCheck> {
   const base = await resolveInRoot(root, relPath);
   if (!base.ok) return base;

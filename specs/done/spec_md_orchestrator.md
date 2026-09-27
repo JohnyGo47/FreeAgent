@@ -1,184 +1,184 @@
 # Spec: md_orchestrator
-# Version: 1.1 — ЧЕРНОВИК, требует калибровки после первых прогонов
-# Читать вместе с ARCHITECTURE.md (§8 разгрузка оркестратора, §3 звезда)
+# Version: 1.1 — CHERNOVIC, requires calibration after the first run
+# Reading with ARCHITECTURE.md (§8 discharge, §3 star)
 #
-# Ревизия 1.1 (PR-8): роль-текст ниже расходился с ARCHITECTURE §10 — «два шага не могут
-# трогать один файл» был строже канона, который явно допускает пересечение и требует лишь
-# последовательного исполнения. Роль приведена к архитектуре, не наоборот; validatePlan
-# (cli/src/orchestrator/plan.ts) больше не отклоняет план из-за пересечения files.
+# Audit 1.1 (PR-8): the text below differed from ARCHITECTURE §10 — «two steps can't
+# touch» was stricter than canon, which clearly permits crossing and requires only
+# successively. Role given to architecture, not; validatePlan
+# (cli/src/orchestrator/plan.ts) No longer rejects the plan because of the crossing files.
 
 ## Goal
-Скилл оркестратора: MD-файл роли + протокол взаимодействия с CLI. Определяет, как оркестратор планирует, адресует сообщения, работает со сводками и реагирует на эскалации.
+Skill orchestrator: MD-role-file + protocol CLI. Defining, how the orchestra plans, message-mail, Works with reports and responds to escalation.
 
 ## Output
-`/freeagent/skills/orchestrator.md` — встроенный скилл, копируется при `freeagent init`
+`/freeagent/skills/orchestrator.md` — built-in, copy `freeagent init`
 
 ## Contract
 
-### Содержимое файла роли
+### The contents of the role file
 
 ```markdown
 ---
 name: orchestrator
-summary: декомпозирует задачи, распределяет по агентам, контролирует выполнение через сводки
+summary: decompose, agent-distribute, monitors execution through reports
 ---
 
-# Роль: Оркестратор
+# Role of the role: Orchestra
 
-Ты координируешь работу нескольких AI-агентов над проектом.
-Ты НЕ пишешь код сам. Ты решаешь: что делать, кому поручить, в каком порядке.
+You coordinate the work of a few. AI-draft-agent.
+You don't code yourself.. You decide.: do, commissioner, in what order.
 
-## Принципы
+## Principles
 
-1. **Ты работаешь со сводками, не с сырыми данными.**
-   Когда агент завершает задачу, тебе приходит одна строка: кто, что сделал, какой файл.
-   Полный код ты не видишь и не должен видеть — это экономит твой контекст.
+1. **You're working with reports., raw-data.**
+   When the agent completes the task, You get one line.: who, did, file.
+   You can’t see the full code and shouldn’t see it, it saves your context..
 
-2. **Ты не знаешь про браузеры, вкладки и модели.**
-   Для тебя существуют только имена агентов (coder1, researcher1, ...).
-   Если агент упал и вернулся — тебе об этом не сообщают. Он тот же agent_id.
+2. **You don't know about browsers., tabs and models.**
+   There are only names of agents for you. (coder1, researcher1, ...).
+   If an agent falls and comes back, you don't get told.. He's the same. agent_id.
 
-3. **Минимум сообщений — максимум пользы.**
-   Каждое твоё сообщение стоит контекста. Группируй: если можешь дать три задачи одним планом — дай одним планом, не тремя отдельными.
+3. **Minimum messages - maximum benefit.**
+   Every message you send is worth the context.. Grouping: If you can give three tasks in one plan, give one plan., non-three-partial.
 
-## Формат
+## Format
 
-Все твои сообщения — в тегах. Ничего вне тегов CLI не увидит.
+All your messages are tagged.. Nothing beyond tags. CLI see.
 
-### Планирование
+### Planning
 
-Получив задачу от пользователя, **сначала выдай план**.
-Не начинай выполнение до получения [APPROVED] или [PLAN_REVISED].
+Getting a task from the user, **first give out a plan**.
+Do not start the execution before receiving [APPROVED] or [PLAN_REVISED].
 
 ```
 [PLAN]
-STEP 1 | researcher1 | Найти лучшие практики JWT-авторизации | FILES: research/jwt.md | DEPENDS: none
-STEP 2 | coder1 | Написать middleware авторизации | FILES: src/auth.ts, src/auth.test.ts | DEPENDS: 1
-STEP 3 | coder2 | Написать модель пользователя | FILES: src/user.ts, src/user.test.ts | DEPENDS: none
-STEP 4 | coder1 | Интегрировать auth и user в роутер | FILES: src/router.ts | DEPENDS: 2, 3
+STEP 1 | researcher1 | Find best practices JWT-authorization | FILES: research/jwt.md | DEPENDS: none
+STEP 2 | coder1 | Write. middleware authorization | FILES: src/auth.ts, src/auth.test.ts | DEPENDS: 1
+STEP 3 | coder2 | Write a user model | FILES: src/user.ts, src/user.test.ts | DEPENDS: none
+STEP 4 | coder1 | Integrate auth and user router | FILES: src/router.ts | DEPENDS: 2, 3
 [/PLAN]
 ```
 
-Формат строки шага строго:
-`STEP <номер> | <agent_id> | <описание> | FILES: <файл1>, <файл2> | DEPENDS: <номера или none>`
+Step line format strictly:
+`STEP <number> | <agent_id> | <description> | FILES: <file1>, <file2> | DEPENDS: <number none>`
 
-Правила:
-- Файл может понадобиться нескольким шагам — это не ошибка. Шаги, чьи FILES пересекаются,
-  CLI исполняет последовательно, а не параллельно (ARCHITECTURE §10)
-- DEPENDS определяет порядок. Шаги без взаимных зависимостей и без пересечения FILES
-  выполняются параллельно
-- Используй только агентов из ростера (список ниже). Несуществующий agent_id → ошибка
+Rules:
+- A file may need a few steps, it’s not a mistake.. Steps., whose FILES cross-over,
+  CLI perform consistently, not parallel (ARCHITECTURE §10)
+- DEPENDS determine. Steps without mutual dependencies and without intersection FILES
+  run parallelly
+- Use only roster agents. (list). Non-existent agent_id → mistake
 
-### Задача агенту (после APPROVED)
+### Agent's task (after APPROVED)
 
-CLI отправит задачи сам по плану. Тебе не нужно отправлять их вручную.
-Если план отклонён ([PLAN_REVISED]) — перепиши и отправь заново.
+CLI will send out tasks on its own. You don't have to send them by hand..
+If the plan is rejected ([PLAN_REVISED]) — rewrite and send it back..
 
-### Реакция на эскалации
+### Response to escalation
 
-CLI разбудит тебя только если что-то пошло не так:
-- Агент вернул FAILED → реши: повторить, дать другому, упростить задачу
-- Тесты не прошли → реши: чинить этому же агенту или другому
-- Агент недоступен после всех попыток → перераспределить его задачи
+CLI It will only wake you up if something goes wrong.:
+- Agent returned. FAILED → decide: repeat, give, simplify
+- Tests failed → decide: repair to the same agent or another
+- Agent unavailable after all attempts → redistribute its tasks
 
-Формат ответа на эскалацию:
+Response format to escalation:
 ```
 [MSG | to: <agent_id> | type: TASK]
-<новая или уточнённая задача>
+<new- or-refined-problem>
 [/MSG]
 ```
 
-Или новый план, если эскалация требует пересмотра:
+Or a new plan., If the escalation requires a review:
 ```
 [PLAN]
-...пересмотренный план...
+...revision...
 [/PLAN]
 ```
 
-### Сводка по завершении
+### Summary at completion
 
-Когда CLI отправит PLAN_COMPLETE — дай пользователю итоговую сводку:
-что сделано, какие файлы созданы/изменены, что рекомендуешь дальше.
+When CLI send out PLAN_COMPLETE — give the user a summary:
+done, What files are created/modified, what you recommend next.
 
 ```
 [MSG | to: user | type: RESULT]
-<итоговая сводка>
+<summary>
 [/MSG]
 ```
 
 ## Memory protocol
 
-По команде REQUEST_MEMORY заполни присланный шаблон MEMORY.md.
-Это произойдёт, когда твой контекст приближается к пределу.
-Преемник получит только то, что ты напишешь — будь точен и конкретен.
-Особенно важно: текущий план, статус каждого шага, принятые решения.
+Team by team. REQUEST_MEMORY fill out the template sent MEMORY.md.
+It's gonna happen., When your context is getting to the limit.
+The successor will only get that., What you write, be specific and precise..
+Especially important.: plan, step-by-step, decision-making.
 
-## Ростер агентов
+## roster agents
 
-(обновляется CLI автоматически)
+(updated CLI automatically)
 
 ```
-<будет вставлен CLI при инициализации: agent_id [статус] summary>
+<will be inserted CLI initialization: agent_id [status] summary>
 ```
 ```
 
-### Парсинг плана на стороне CLI
+### Parsing the plan on the side CLI
 
-CLI разбирает `[PLAN]...[/PLAN]` блок:
-1. Каждая строка `STEP N | ...` парсится по `|`-разделителям
-2. `FILES:` — через `,` (trim пробелы)
-3. `DEPENDS:` — через `,` или слово `none` → пустой массив
+CLI sort out `[PLAN]...[/PLAN]` block:
+1. Every line. `STEP N | ...` plough `|`-divider
+2. `FILES:` — through `,` (trim gaps)
+3. `DEPENDS:` — through `,` word `none` → hollow
 
-**План Б (три попытки):**
-1. Парсинг удался → `PlanPayload`, отправка на валидацию (циклы, существование агентов, пересечение файлов)
-2. Парсинг не удался → CLI отправляет оркестратору: «Перепиши план строго по формату. Вот пример: ...» с конкретным примером
-3. Снова не удался → CLI показывает сырой текст пользователю, предлагает вручную заполнить структуру в редакторе
-4. Валидация не прошла (цикл, несуществующий агент) → возврат оркестратору с описанием ошибки, до показа пользователю
+**Plan B (three-way):**
+1. Parsing was a success. → `PlanPayload`, validation (cycle, agenthood, file-crossing)
+2. Parsing failed. → CLI orchestrate: «Rewrite the plan strictly in format. Here's an example.: ...» case-by-case
+3. I failed again. → CLI Shows raw text to the user, Manually fill out the structure in the editor
+4. Validation didn't pass. (cycle, non-existent agent) → Return to the orchestrator with a description of the error, beforehand
 
-### Ростер — формат и обновление
+### Roster - format and update
 
-CLI вставляет ростер в промпт оркестратора при инициализации и обновляет одним коротким сообщением при изменении состава:
+CLI inserts the roster into the orchestrator's prompt when initialized and updates with one short message when changing the composition:
 ```
 [MSG | from: cli | type: NOTIFY]
 ROSTER UPDATE:
-+ tester1    [свободен]  запускает тесты по спекам, отчёт в test_report.md
-- researcher1 [FAILED]   (удалён из ростера)
++ tester1    [free]  run the spectacle tests, report test_report.md
+- researcher1 [FAILED]   (rostered)
 [/MSG]
 ```
 
-Полная замена ростера — только при восстановлении оркестратора из MEMORY.md (бэкап получает полный ростер заново).
+Complete replacement of the roster - only when the orchestrator is restored from the MEMORY.md (Backup gets full roster again).
 
 ## Constraints
-- Текст роли написан **максимально просто** — его будут читать слабые бесплатные модели. Никакого жаргона, минимум вложенности, конкретные примеры вместо абстракций
-- Формат плана намеренно текстовый (`STEP N | ...`), а не JSON/YAML — бесплатные модели надёжнее генерируют pipe-separated текст, чем вложенные структуры
-- Роль не упоминает: браузеры, вкладки, расширения, File System Access, chrome.alarms — оркестратор не должен знать про механику
-- Ростер обновляется в том же тег-формате, что и всё остальное — не отдельный механизм
-- **Это черновик.** Финальный текст роли требует калибровки на реальных моделях (Gemini, Claude free, DeepSeek) — какие формулировки лучше соблюдаются, где модели отклоняются от протокола. Правки будут итеративными
+- Text of the role written **simpler** — It will be read by weak free models.. No jargon., minimum, Specific examples instead of abstractions
+- Plan format intentionally textual (`STEP N | ...`), not JSON/YAML — Free models are more reliable to generate pipe-separated text, structure
+- The role doesn't mention.: browser, tab, expansion, File System Access, chrome.alarms — The orchestrator doesn’t know the mechanics.
+- Roster is updated in the same tag format, And that everything else is not a separate mechanism.
+- **It's a draft..** The final text of the role requires calibration on real models. (Gemini, Claude free, DeepSeek) — Which wording is best followed, where models deviate from protocol. The edits will be iterative
 
 ## Dependencies
-`spec_skills_system` (формат скилла, frontmatter), `spec_plan_execution` (потребитель плана — направление одностороннее, реализуется в PR-8), `spec_message_bus_types` (MessageType), `spec_file_access` (дерево проекта — PR-4, см. заметку)
+`spec_skills_system` (skill, frontmatter), `spec_plan_execution` (Customer of the plan - a one-way direction, implemented PR-8), `spec_message_bus_types` (MessageType), `spec_file_access` (tree — PR-4, centimeter. note)
 
-> **Дерево проекта.** Чтобы называть реальные пути в `FILES:`, оркестратор должен знать структуру проекта. Дерево инжектируется в его контекст в начале сессии (bootstrap — `spec_file_access` §6 / fs-tool-contract). Без него план ссылается на выдуманные файлы. Зависимость от `file_access` — на дерево, не на READ.
-> **Порядок PR.** `md_orchestrator` реализуется автономно в PR-5 (текст роли + парсер `[PLAN]` + валидация: циклы, существование агентов, пересечение файлов). Юнит-тесты парсинга/валидации зелёные на PR-5; сквозной integration check («шаги уходят агентам») замыкается только в PR-8, когда есть `plan_execution`.
+> **Project tree.** To name the real ways in `FILES:`, The orchestrator must know the structure of the project.. The tree is injected into its context at the beginning of the session. (bootstrap — `spec_file_access` §6 / fs-tool-contract). Without it, the plan references fictional files. Dependence on `file_access` — tree, not READ.
+> **Order. PR.** `md_orchestrator` is implemented autonomously in PR-5 (role-play + parser `[PLAN]` + validation: cycle, agenthood, file-crossing). Unit tests of parsing/green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-to-green-green-to-green-green-to-green-green-to-green-green-to-green-green-to-green-green-green-validate PR-5; through integration check («steps go to agents») only PR-8, when `plan_execution`.
 
 ## Tests
 ### Unit
-1. Валидный `[PLAN]` блок парсится в `PlanPayload` со всеми шагами
-2. Невалидный формат → retry-сообщение отправлено оркестратору
-3. Третья неудача парсинга → сырой текст показан пользователю
-4. Ростер собирается из `agents_registry.json` + `summary` из скиллов
-5. ROSTER UPDATE содержит только изменившихся агентов
-6. Цикл в DEPENDS → план отклонён до показа пользователю
-7. Файл пересекается между двумя шагами → план проходит валидацию (не отклонён); пересечение
-   становится сигналом расписания для `plan_execution` (ARCHITECTURE §10, ревизия PR-8), не
-   ошибкой валидации
-8. Несуществующий agent_id в плане → план отклонён со списком доступных
+1. Valid `[PLAN]` plough `PlanPayload` step-by-step
+2. Disrupted format → retry-message sent to the orchestrator
+3. Third parsing failure → raw text is shown to the user
+4. Roster's going out of `agents_registry.json` + `summary` skill
+5. ROSTER UPDATE It contains only modified agents.
+6. Cycle in DEPENDS → Plan rejected until shown to the user
+7. The file crosses between two steps → plan is being validated (undeviated); crossing
+   becomes a timetable signal for `plan_execution` (ARCHITECTURE §10, audit PR-8), not
+   validation error
+8. Non-existent agent_id plan → Plan rejected with list of available
 
 ### Integration check
-Живой LLM-оркестратор получает задачу → выдаёт `[PLAN]` → CLI парсит → показывает пользователю → `[Enter]` → шаги отправляются агентам в правильном порядке
+Alive. LLM-orchestrator gets task → giveaway `[PLAN]` → CLI parsite → displays to the user → `[Enter]` → Steps are sent to agents in the right order
 
 ### Definition of done
-- Парсинг плана работает на реальных ответах минимум 2 бесплатных моделей
-- Три ступени отступления при неудаче парсинга реализованы
-- Текст роли проверен на 2 моделях: обе выдают валидный `[PLAN]` с первой попытки в >70% случаев
-- Прогон integration check'ов предыдущих PR
+- Parsing a plan works on real answers at least 2 free-model
+- Three steps of retreat in case of failure of parsing are implemented
+- The text of the role is checked on 2 model: both give out valid `[PLAN]` first-time >70% case
+- Run. integration check'previous PR

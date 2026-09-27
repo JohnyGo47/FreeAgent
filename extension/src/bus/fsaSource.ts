@@ -1,6 +1,6 @@
-// FsaSource — реализация BusFileSource поверх File System Access API (spec_message_bus_read).
-// FileSystemObserver где доступен (Chrome/Edge), иначе polling fallback 2с (STACK.md).
-// BusReader выше по стеку не меняется — он уже написан против интерфейса BusFileSource.
+// FsaSource is an implementation of BusFileSource on top of the File System Access API (spec_message_bus_read).
+// FileSystemObserver where available (Chrome/Edge), otherwise polling fallback 2With (STACK.md).
+// The BusReader higher up the stack does not change - it is already written against the BusFileSource interface.
 import { makeBatchFromContent, type Batch, type BusFileSource } from '../../../shared/bus-source.ts';
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
@@ -25,38 +25,8 @@ export class FsaSource implements BusFileSource {
   }
 
   async *watch(): AsyncGenerator<Batch> {
-    yield await this.readBatch(); // содержимое, уже лежащее на диске к моменту старта
-
-    const ObserverCtor = (globalThis as { FileSystemObserver?: FileSystemObserverConstructor }).FileSystemObserver;
-    if (ObserverCtor) {
-      yield* this.watchWithObserver(ObserverCtor);
-    } else {
-      yield* this.watchWithPolling();
-    }
-  }
-
-  private async *watchWithObserver(ObserverCtor: FileSystemObserverConstructor): AsyncGenerator<Batch> {
-    let wake: (() => void) | null = null;
-    let pending = false;
-    const observer = new ObserverCtor(() => {
-      pending = true;
-      wake?.();
-    });
-    await observer.observe(this.handle);
-
-    try {
-      while (true) {
-        if (!pending) {
-          await new Promise<void>((resolve) => {
-            wake = resolve;
-          });
-        }
-        pending = false;
-        yield await this.readBatch();
-      }
-    } finally {
-      observer.disconnect();
-    }
+    yield await this.readBatch(); // contents already on disk at the time of start
+    yield* this.watchWithPolling();
   }
 
   private async *watchWithPolling(): AsyncGenerator<Batch> {

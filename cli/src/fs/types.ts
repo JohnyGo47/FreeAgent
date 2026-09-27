@@ -1,5 +1,5 @@
-// Типы файлового доступа агента (spec_file_access v1.1). Не путать с extension/src/fs/ —
-// там FSA-доступ браузера к папке проекта; здесь — node:fs по корню из freeagent.config.json.
+// Agent file access types (spec_file_access v1.1). Not to be confused with extension/src/fs/ -
+// there is FSA browser access to the project folder; here - node:fs rooted from freeagent.config.json.
 
 export const FS_OPS = ['list', 'search', 'read', 'write', 'edit'] as const;
 export type FsOp = typeof FS_OPS[number];

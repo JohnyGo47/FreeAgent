@@ -1,5 +1,5 @@
-// spec_git_checkpoints — реальный git-репозиторий во временной папке на каждый тест (не мок git,
-// ГОТОВО КОГДА требует факта: git log/git show после реальных commit/add/revert).
+// spec_git_checkpoints - a real git repository in a temporary folder for each test (not a git mock,
+// READY WHEN requires fact: git log/git show after real commit/add/revert).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
@@ -25,7 +25,7 @@ async function gitRepo(): Promise<string> {
   await execFileAsync('git', ['init', '-q'], { cwd: dir });
   await execFileAsync('git', ['config', 'user.email', 'a@a.com'], { cwd: dir });
   await execFileAsync('git', ['config', 'user.name', 'a'], { cwd: dir });
-  await execFileAsync('git', ['config', 'core.autocrlf', 'false'], { cwd: dir }); // детерминизм на Windows
+  await execFileAsync('git', ['config', 'core.autocrlf', 'false'], { cwd: dir }); // determinism on Windows
   await writeFile(join(dir, 'README.md'), 'init\n', 'utf8');
   await execFileAsync('git', ['add', 'README.md'], { cwd: dir });
   await execFileAsync('git', ['commit', '-q', '-m', 'init'], { cwd: dir });
@@ -42,13 +42,13 @@ async function showFiles(dir: string, ref: string): Promise<string[]> {
   return stdout
     .trim()
     .split('\n')
-    .filter((l) => l.includes('|')) // отсекает сводную строку "N files changed, ..."
+    .filter((l) => l.includes('|')) // cuts off the summary line "N files changed, ..."
     .map((l) => l.split('|')[0].trim());
 }
 
-// --- Test 1: WRITE -> DONE -> два коммита с верными префиксами, только затронутые файлы ---
+// --- Test 1: WRITE -> DONE -> two commits with correct prefixes, only affected files ---
 
-test('preTaskCheckpoint + doneCheckpoint: два реальных коммита, верные префиксы, только files шага', async (t) => {
+test('preTaskCheckpoint + doneCheckpoint: two real commits, correct prefixes, only step files', async (t) => {
   const dir = await gitRepo();
   t.after(() => rm(dir, { recursive: true, force: true }));
 
@@ -69,9 +69,9 @@ test('preTaskCheckpoint + doneCheckpoint: два реальных коммита
   assert.deepEqual(files, ['src/a.ts']);
 });
 
-// --- Test 2/3: /undo (последний / по task_id) через git revert, файлы возвращаются к pre-task ---
+// --- Test 2/3: /undo (last / by task_id) via git revert, files are returned to pre-task ---
 
-test('undoCheckpoint: git revert реально возвращает файл к pre-task содержимому', async (t) => {
+test('undoCheckpoint: git revert actually returns the file to pre-task content', async (t) => {
   const dir = await gitRepo();
   t.after(() => rm(dir, { recursive: true, force: true }));
 
@@ -92,7 +92,7 @@ test('undoCheckpoint: git revert реально возвращает файл к
   assert.equal(content, 'v1\n');
 });
 
-test('/undo <task_id>: из трёх задач откатывает только указанную', async (t) => {
+test('/undo <task_id>: out of three tasks, rolls back only the specified one', async (t) => {
   const dir = await gitRepo();
   t.after(() => rm(dir, { recursive: true, force: true }));
 
@@ -113,12 +113,12 @@ test('/undo <task_id>: из трёх задач откатывает тольк�
   const outcome = await undoCheckpoint(dir, target);
   assert.equal(outcome.ok, true, JSON.stringify(outcome));
 
-  assert.equal(await readFile(join(dir, 'a.ts'), 'utf8'), 'a-done\n'); // task-1 нетронута
-  assert.equal(await readFile(join(dir, 'c.ts'), 'utf8'), 'c-done\n'); // task-3 нетронута
-  await assert.rejects(readFile(join(dir, 'b.ts'), 'utf8')); // task-2 откачена (revert удалил файл, которого не было в pre-task)
+  assert.equal(await readFile(join(dir, 'a.ts'), 'utf8'), 'a-done\n'); // task-1 is untouched
+  assert.equal(await readFile(join(dir, 'c.ts'), 'utf8'), 'c-done\n'); // task-3 untouched
+  await assert.rejects(readFile(join(dir, 'b.ts'), 'utf8')); // task-2 is rolled back (revert deleted a file that was not in the pre-task)
 });
 
-test('undoCheckpoint: конфликт revert -> остановка с деталями, не резолвится автоматически', async (t) => {
+test('undoCheckpoint: conflict revert -> stop with details, does not resolve automatically', async (t) => {
   const dir = await gitRepo();
   t.after(() => rm(dir, { recursive: true, force: true }));
 
@@ -130,7 +130,7 @@ test('undoCheckpoint: конфликт revert -> остановка с дета�
   await writeFile(join(dir, 'y.ts'), 'task-1 change\n', 'utf8');
   const done = await doneCheckpoint(dir, 'task-1', ['y.ts'], 'change y');
 
-  // Более поздний коммит трогает ту же строку -> revert task-1 конфликтует.
+  // A later commit touches the same line -> revert task-1 conflicts.
   await writeFile(join(dir, 'y.ts'), 'later unrelated change\n', 'utf8');
   await execFileAsync('git', ['add', 'y.ts'], { cwd: dir });
   await execFileAsync('git', ['commit', '-q', '-m', 'later'], { cwd: dir });
@@ -142,14 +142,14 @@ test('undoCheckpoint: конфликт revert -> остановка с дета�
     assert.equal(outcome.conflict, true);
     assert.match(outcome.detail, /conflict/i);
   }
-  // Конфликт оставлен как есть — не резолвим автоматически (не abort, не auto-continue).
+  // The conflict is left as is - not automatically resolved (not abort, not auto-continue).
   const { stdout: status } = await execFileAsync('git', ['status', '--short'], { cwd: dir });
   assert.match(status, /y\.ts/);
 });
 
-// --- Test 4: staged-изменения пользователя не попадают в чекпоинт ---
+// --- Test 4: staged user changes do not go to checkpoint ---
 
-test('staged изменения пользователя в другом файле не попадают ни в pre-task, ни в done коммит', async (t) => {
+test('staged user changes in another file are not included in either the pre-task or done commit', async (t) => {
   const dir = await gitRepo();
   t.after(() => rm(dir, { recursive: true, force: true }));
 
@@ -166,22 +166,22 @@ test('staged изменения пользователя в другом фай�
     assert.equal(files.includes('user_work.ts'), false, `${ref} must not include user's staged file`);
   }
   const { stdout: status } = await execFileAsync('git', ['status', '--short'], { cwd: dir });
-  assert.match(status, /A\s+user_work\.ts/); // всё ещё staged, как оставил пользователь
+  assert.match(status, /A\s+user_work\.ts/); // still staged as left by the user
 });
 
-// --- Test 5: два параллельных шага -> два коммита, файлы не перемешаны ---
+// --- Test 5: two parallel steps -> two commits, files not mixed ---
 
-test('два параллельных шага (последовательные await, как в реальном mainLoop) -> два раздельных коммита', async (t) => {
+test('two parallel steps (successive awaits, like in a real mainLoop) -> two separate commits', async (t) => {
   const dir = await gitRepo();
   t.after(() => rm(dir, { recursive: true, force: true }));
 
   await writeFile(join(dir, 'p.ts'), 'p\n', 'utf8');
   await writeFile(join(dir, 'q.ts'), 'q\n', 'utf8');
 
-  // git commit одновременно из двух процессов конфликтует по .git/index.lock — реалистичная
-  // модель этого репозитория (mainLoop однопоточный, RESULT обрабатываются последовательно), не
-  // настоящая параллельность на уровне ОС — поэтому pre-task коммиты тоже строго
-  // последовательные await, не Promise.all.
+  // git commit simultaneously from two processes conflicts on .git/index.lock - realistic
+  // the model of this repository (mainLoop is single-threaded, RESULTs are processed sequentially), not
+  // real parallelism at the OS level - therefore pre-task commits are also strictly
+  // sequential await, not Promise.all.
   await preTaskCheckpoint(dir, 'task-p');
   await preTaskCheckpoint(dir, 'task-q');
   const donePResult = await doneCheckpoint(dir, 'task-p', ['p.ts'], 'done p');
@@ -195,16 +195,16 @@ test('два параллельных шага (последовательные
   assert.deepEqual(filesQ, ['q.ts']);
 });
 
-// --- Test 7: /freeagent/ отсутствует во всех чекпоинтах ---
+// --- Test 7: /freeagent/ is missing from all checkpoints ---
 
-test('isCheckpointable: /freeagent/ и privacy-паттерны исключены (общий источник, не дублируем)', () => {
+test('isCheckpointable: /freeagent/ and privacy patterns excluded (common source, do not duplicate)', () => {
   assert.equal(isCheckpointable('freeagent/message_bus.jsonl'), false);
   assert.equal(isCheckpointable('src/auth.ts'), true);
   assert.equal(isCheckpointable('.env'), false);
   assert.equal(isCheckpointable('secrets/id_rsa'), false);
 });
 
-test('doneCheckpoint: файлы вне isCheckpointable молча пропущены при add, коммит всё равно создаётся', async (t) => {
+test('doneCheckpoint: files outside isCheckpointable are silently skipped during add, commit is still created', async (t) => {
   const dir = await gitRepo();
   t.after(() => rm(dir, { recursive: true, force: true }));
 
@@ -221,7 +221,7 @@ test('doneCheckpoint: файлы вне isCheckpointable молча пропущ
 
 // --- checkpoints.json load/save round-trip ---
 
-test('checkpoints.json: load/save round-trip, отсутствующий файл -> пустой массив', async (t) => {
+test('checkpoints.json: load/save round-trip, missing file -> empty array', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'freeagent-checkpoints-json-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
 

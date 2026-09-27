@@ -1,11 +1,11 @@
-// selector_resilience (spec_selector_resilience v2.0) — fallback-цепочки, self-healing с
-// подтверждением, community-registry. Схема адаптера не переопределяется здесь (constraint spec,
-// определена в shared/adapter-types). Только content script — здесь нет прямого DOM API,
-// фикстуры/query внедряются снаружи, тем же приёмом, что responseComplete.ts/messageFormat.ts.
+// selector_resilience (spec_selector_resilience v2.0) - fallback chains, self-healing with
+// confirmation, community-registry. The adapter schema is not overridden here (constraint spec,
+// defined in shared/adapter-types). Content script only - no direct DOM API here,
+// fixtures/queries are injected externally using the same technique as responseComplete.ts/messageFormat.ts.
 import type { AdapterRegistry } from '../../../shared/adapter-types/index.ts';
 
-// Порядок разрешения: локальный override → цепочка из registry по порядку → self-healing (BLOCKED,
-// см. SelectorHealer). Поломка каждого проваленного селектора логируется вызывающей стороной.
+// Resolution order: local override → chain from registry in order → self-healing (BLOCKED,
+// see SelectorHealer). The failure of each failed selector is logged by the caller.
 export function resolveSelectorChain<T>(
   chain: string[],
   override: string | undefined,
@@ -34,7 +34,7 @@ export interface ElementFixture {
   area: number;
 }
 
-// Эвристика input: самый большой видимый [contenteditable=true] или textarea во viewport.
+// Heuristic input: the largest visible [contenteditable=true] or textarea in the viewport.
 export function guessInputCandidate(elements: ElementFixture[]): ElementFixture | null {
   const candidates = elements.filter((el) => el.visible && el.inViewport && (el.contentEditable || el.textarea));
   if (candidates.length === 0) return null;
@@ -43,13 +43,13 @@ export function guessInputCandidate(elements: ElementFixture[]): ElementFixture 
 
 export type SelectorRole = 'input' | 'submit' | 'response_container';
 
-// Кандидат никогда не применяется молча (constraint spec) — до confirm()/reject() агент в
-// SELECTOR_BROKEN (isBlocked() === true), задача приостановлена.
+// The candidate is never applied silently (constraint spec) - until the agent confirm()/reject()
+// SELECTOR_BROKEN (isBlocked() === true), the task is suspended.
 export class SelectorHealer {
   private pending = new Map<SelectorRole, ElementFixture>();
   private confirmed = new Map<SelectorRole, ElementFixture>();
-  // Роль остаётся "сломанной" после reject() — отклонённый кандидат не значит, что проблема
-  // решена, только что этот конкретный вариант неверен (задача остаётся приостановленной).
+  // The role remains "broken" after reject() - a rejected candidate does not mean there is a problem
+  // solved, just that this particular option is incorrect (the task remains suspended).
   private blocked = new Set<SelectorRole>();
 
   propose(role: SelectorRole, candidate: ElementFixture): void {
@@ -78,9 +78,9 @@ export class SelectorHealer {
   }
 }
 
-// Community-registry: подтверждённый селектор пишется локально сразу; отправка в community —
-// только по явному действию пользователя (constraint: "никакой автоматической телеметрии") —
-// вне этой функции. Сетевая ошибка — забота вызывающего (он просто не вызывает merge).
+// Community-registry: the confirmed selector is written locally immediately; sending to community -
+// only by explicit user action (constraint: “no automatic telemetry”) —
+// outside this function. The network error is the caller's concern (he just doesn't call merge).
 export function mergeRemoteRegistry(local: AdapterRegistry, remote: AdapterRegistry): AdapterRegistry {
   return remote.registry_version > local.registry_version ? remote : local;
 }

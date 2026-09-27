@@ -1,67 +1,65 @@
-# Spec: init_agent
+# Spec: init agent
 # Version: 2.0
-# Читать вместе с ARCHITECTURE.md (§15 инициализация, §14 роли)
+# Read with ARCHITECTURE.md (§15 initialization, §14 role)
 
-## Goal
-Единая процедура `initializeAgent(agent, extraContext?)`, используемая в четырёх сценариях: первичное создание, recovery, активация бэкапа, переподключение после отказа сервиса.
+#Goal
+A single `initializeAgent(agent, extraContext?)` procedure used in four scenarios: initial creation, recovery, backup activation, reconnect after service failure.
 
-## Input
-- Флоу А: вкладка, выбранная пользователем в UI расширения + роль из `/skills/`
-- Флоу Б: `llm_url` + роль из реестра (программное открытие)
-- `llm_adapter_registry` — селекторы
-- Опциональный `extraContext` (RECOVERY CONTEXT / MEMORY.md)
+#Input
+Flow A: tab selected by the user in the extension UI + role from `/skills/`
+Flow B: `llm_url` + Role from the Registry (software discovery)
+`llm_adapter_registry` - selectors
+Optional `extraContext` (RECOVERY CONTEXT / MEMORY) md)
 
-## Output
-- `REGISTER_REQUEST` → CLI присваивает `agent_id` → запись в `agents_registry.json`
-- Инжектирован INIT-промпт → агент отвечает `[READY]` → статус `IDLE`
-- `NOTIFY: AGENT_READY`, ростер оркестратора обновлён
+#Output
+`REGISTER_REQUEST` → CLI assigns `agent_id` → `agents_registry.json`
+Injected INIT prompt → agent responds `[READY]` → status `IDLE`
+`NOTIFY: AGENT_READY`, orchestra roster updated
 
-## Contract
+##Contract ##
 
-### Два флоу, один код
-**Флоу А — пиннинг (человек).** Пользователь открыл чат и залогинился → клик по расширению → «сделать агентом» → выбор роли из списка (список = MD-файлы `/skills/` с валидным frontmatter) → расширение шлёт `REGISTER_REQUEST` с `tab_id`.
+###Two floats, one code
+**Flow A – pinning (person).** User opened chat and logged in → click extension → “make an agent” → role selection from the list (list = MD files `/skills/` with valid frontmatter) → expansion send `REGISTER_REQUEST` with `tab_id`.
 
-Решает авторизацию по построению: чат открыт → вход выполнен → нужный аккаунт выбран.
+Solves authorization by construction: chat is open → login is executed → the desired account is selected.
 
-**Флоу Б — программное открытие (система).** `chrome.tabs.create({ url, active: false })` + инжект. Используется recovery и активацией бэкапа. Работает только там, где вход уже выполнен; иначе `BLOCKED: auth_required`.
+**Flow B is a software discovery (system).** `chrome.tabs.create({ url, active: false })` + injection. Used recovery and backup activation. It only works where the input is already made; otherwise, `BLOCKED: auth_required`.
 
-### Присвоение agent_id
-- CLI — единственный writer `agents_registry.json`
-- `agent_id` = `<role><N>`, где N — минимальный свободный номер для этой роли
-- Расширение **не пишет реестр** — только `REGISTER_REQUEST` в свой incoming
+##### Assignment of agent id
+CLI is the only writer `agents_registry.json`
+`agent_id` = `<role><N>`, where N is the minimum free number for this role.
+- Extension ** does not write registry** - only `REGISTER_REQUEST` in its incoming
 
-### INIT-промпт (тег-текст, слой перевода)
+### INIT-prompt (tag-text, translation layer)
 ```
 [INIT: {agent_id}]
-Ты — {role}. Работаешь в системе FreeAgent.
-{полное содержимое MD роли}
-{extraContext, если передан}
-Ответь [READY] когда готов принимать задачи.
+You — {role}. You work the system. FreeAgent.
+{full-length MD role}
+{extraContext, if transferred}
+Answer me. [READY] when ready to take on tasks.
 [/INIT]
-```
-
-## Constraints
-- Timeout ожидания `READY`: 60с → `INIT_FAILED` + `NOTIFY`. Это **не** recovery-FAILED, попытки recovery не тратятся
-- `needs_auth: true` + детектирована login-форма (нет `input` селектора) → `BLOCKED`, инжект не выполняется
-- Роль без обязательного `summary` во frontmatter не появляется в списке (`spec_skills_system`)
-- Оркестратор создаётся этим же флоу с ролью `orchestrator` — отдельного пути нет
+```##Constraints
+- Timeout waiting `READY`: 60c → `INIT_FAILED` + `NOTIFY`. It's a ***** recovery-failed, recovery attempts are not wasted
+- `needs_auth: true` + detected login form (no `input` selector) → `BLOCKED`, no injection
+- The role without the obligatory `summary` in the frontmatter does not appear on the list (`spec_skills_system`)
+The orchestra is created by the same flow with the role of `orchestrator` - there is no separate path.
 
 ## Dependencies
 `spec_message_bus_types`, `spec_message_bus_write`, `spec_llm_adapter_registry`, `spec_fs_folder_access`, `spec_skills_system`
 
 ## Tests
-### Unit
-1. `agent_id` уникален: второй coder → `coder2`; после удаления coder1 следующий занимает свободный номер
-2. `READY` в срок → `IDLE`; тишина 60с → `INIT_FAILED`, recovery-попытки не тронуты
-3. `needs_auth` + login-форма → `BLOCKED`, инжекта не было
-4. Реестр не пишется из кода расширения (grep в CI: нет записи `agents_registry` в бандле расширения)
-5. `extraContext` вставляется в отведённое место шаблона
-6. Оркестратор создаётся тем же кодом, что обычный агент
+################################################################################################################################################################################################################################################################
+1. `agent_id` is unique: second coder → `coder2`; after deleting coder1, the next coder is free.
+2. `READY` in time → `IDLE`; silence 60c → `INIT_FAILED`, recovery attempts untouched
+3. `needs_auth` + login-form → `BLOCKED`, no injection
+4. The registry is not written from the extension code (grep in CI: no `agents_registry` entry in the expansion bundle)
+5. `extraContext` is inserted into the designated template location.
+6. The orchestra is created with the same code as a normal agent.
 
-### Integration check
-Живая вкладка: добавить агента через popup → `READY` → `freeagent agents` показывает `IDLE` → отправить тестовую задачу
+###Integration check
+Live tab: add agent via popup → `READY` → `freeagent agents` shows `IDLE` → send a test task
 
-### Definition of done
-- Тесты зелёные, ручная проверка на 2 разных LLM
-- Recovery, бэкап и переподключение переиспользуют `initializeAgent` — дублирования нет
-- Прогон integration check'ов предыдущих PR
+###Definition of done
+- Green tests, manual check on 2 different LLMs
+Recovery, backup and reconnect reuse `initializeAgent` – no duplication
+- Run integration checks of previous PR

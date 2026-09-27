@@ -1,5 +1,5 @@
-// FolderAccessService — единственный владелец FSA-хэндла корня проекта (ARCHITECTURE §4, spec_fs_folder_access).
-// Ни один другой модуль не должен вызывать showDirectoryPicker/handle.getDirectoryHandle напрямую.
+// FolderAccessService is the sole owner of the FSA handle of the project root (ARCHITECTURE §4, spec_fs_folder_access).
+// No other module should call showDirectoryPicker/handle.getDirectoryHandle directly.
 import { STRUCTURE_FILES, STRUCTURE_DIRS } from '../../../shared/bus-structure.ts';
 
 export interface HandleStore {
@@ -34,7 +34,7 @@ export class FolderAccessService {
     this.pickDirectory = pickDirectory;
   }
 
-  // Только из user gesture — платформенное ограничение showDirectoryPicker.
+  // Only from user gesture - platform limitation showDirectoryPicker.
   async pickFolder(): Promise<void> {
     this.handle = await this.pickDirectory();
     await this.store.set(STORE_KEY, this.handle);
@@ -49,7 +49,7 @@ export class FolderAccessService {
     return permission === 'granted' ? 'granted' : 'prompt';
   }
 
-  // По клику на «Восстановить доступ» — requestPermission тоже требует user gesture.
+  // By clicking on “Restore access” - requestPermission also requires a user gesture.
   async requestAccess(): Promise<boolean> {
     if (!this.handle) return false;
     const permission = await this.handle.requestPermission({ mode: 'readwrite' });

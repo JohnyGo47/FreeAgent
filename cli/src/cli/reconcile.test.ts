@@ -11,19 +11,19 @@ function registry(): AgentsRegistry {
   };
 }
 
-test('перезапуск: CLI запрашивает TAB_STATE у каждого зарегистрированного агента', () => {
+test('restart: CLI requests TAB_STATE from each registered agent', () => {
   const requests = buildTabStateRequests(registry());
   assert.equal(requests.length, 2);
   assert.equal(requests[0].message.type, 'COMMAND');
 });
 
-test('живой агент (TAB_STATE: alive) возвращается в работу как IDLE', () => {
+test('live agent (TAB_STATE: alive) returns to work as IDLE', () => {
   const responses: Record<string, TabStatePayload> = { coder1: { agent_id: 'coder1', state: 'alive' } };
   const updated = reconcileFromResponses(registry(), responses);
   assert.equal(updated.coder1.status, 'IDLE');
 });
 
-test('агент без ответа помечен мёртвым (SERVICE_DOWN), реестр не считается достоверным до сверки', () => {
+test('an agent without a response is marked dead (SERVICE_DOWN), the register is not considered reliable until reconciliation', () => {
   const responses: Record<string, TabStatePayload> = { coder1: { agent_id: 'coder1', state: 'alive' } };
   const updated = reconcileFromResponses(registry(), responses);
   assert.equal(updated.tester1.status, 'SERVICE_DOWN');

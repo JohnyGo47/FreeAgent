@@ -1,4 +1,4 @@
-// Case-таблица parseFsCall (spec_file_access шаг 3).
+// Case table parseFsCall (spec_file_access step 3).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFsCall } from './parseFsCall.ts';

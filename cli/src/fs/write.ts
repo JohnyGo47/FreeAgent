@@ -1,4 +1,4 @@
-// fs.write (spec_file_access): создать/перезаписать файл. kind записывается, не enforced в PR-4.
+// fs.write (spec_file_access): create/overwrite a file. kind is recorded, not enforced in PR-4.
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, relative } from 'node:path';
 import { validateWritePath } from './pathGuard.ts';

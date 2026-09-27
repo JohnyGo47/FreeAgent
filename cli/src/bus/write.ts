@@ -3,7 +3,7 @@ import { parseBusLine, type BusMessage } from '../../../shared/bus-types/index.t
 import { log } from '../../../shared/log.ts';
 import { withLock } from './lock.ts';
 
-// ponytail: дедуп по последним N id, а не по всему файлу — ротация шины (spec_bus_rotation) пересмотрит хранение при росте файла
+// ponytail: dedup by last N id, and not by the entire file - bus rotation (spec_bus_rotation) will reconsider storage as the file grows
 const DEDUP_TAIL_SIZE = 1000;
 
 async function readBusTail(busPath: string): Promise<{ nextSeq: number; recentIds: Set<string> }> {
@@ -35,17 +35,22 @@ export class BusWriter {
     this.lockPath = `${busPath}.lock`;
   }
 
-  // Восстанавливает seq и множество недавних id из хвоста шины (ARCHITECTURE §4, ревизия v1.1 #50).
+  // Restores seq and a set of recent ids from the tail of the bus (ARCHITECTURE §4, revision v1.1 #50).
   static async create(busPath: string): Promise<BusWriter> {
     const { nextSeq, recentIds } = await readBusTail(busPath);
     return new BusWriter(busPath, nextSeq, recentIds);
   }
 
-  // Переносит валидные, не дублирующиеся строки incoming в главную шину под локом.
-  // Битые строки логируются и пропускаются (курсор реального ридера incoming — забота вызывающего).
+  // Transfers valid, non-duplicate incoming lines to the main bus under the lock.
+  // Broken lines are logged and skipped (the cursor of the real incoming reader is the caller's concern).
   async mergeOnce(lines: string[]): Promise<{ appended: number }> {
     let appended = 0;
     await withLock(this.lockPath, async () => {
+      // Another process could have added to the bus after this writer was created (for example, `fa do`).
+      // Re-read the tail already under a common lock, otherwise two live writers will issue the same seq.
+      const current = await readBusTail(this.busPath);
+      this.seq = Math.max(this.seq, current.nextSeq);
+      for (const id of current.recentIds) this.recentIds.add(id);
       const toAppend: string[] = [];
       for (const rawLine of lines) {
         const parsed = parseBusLine(rawLine);
@@ -53,7 +58,7 @@ export class BusWriter {
           log.warn(`merge: skipping broken line: ${parsed.error}`);
           continue;
         }
-        if (this.recentIds.has(parsed.msg.id)) continue; // дедуп — at-least-once идемпотентен
+        if (this.recentIds.has(parsed.msg.id)) continue; // dedup - at-least-once is idempotent
 
         const withSeq: BusMessage = { ...parsed.msg, seq: this.seq };
         this.seq += 1;

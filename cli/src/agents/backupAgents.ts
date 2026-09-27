@@ -1,7 +1,7 @@
-// backup_agents (spec_backup_agents v1.0) — горячий бэкап: переключение переезжает agent_id на
-// заранее инициализированную вкладку-бэкап вместе с памятью, оркестратор ничего не замечает
-// (ARCHITECTURE §7/§8). Три шага процедуры — три чистые функции, I/O (чтение/запись MEMORY.md на
-// диск) остаётся на вызывающей стороне (applyMessage.ts), как и everywhere else в этом слое.
+// backup_agents (spec_backup_agents v1.0) - hot backup: switching moves agent_id to
+// a pre-initialized backup tab along with memory, the orchestrator does not notice anything
+// (ARCHITECTURE §7/§8). Three steps of the procedure - three pure functions, I/O (read/write MEMORY.md on
+// disk) remains on the caller (applyMessage.ts), as does everywhere else in this layer.
 import { randomUUID } from 'node:crypto';
 import type { AgentsRegistry, RegisteredAgent } from '../registry/registry.ts';
 import type { BusMessage, CommandPayload, NotifyPayload } from '../../../shared/bus-types/index.ts';
@@ -14,8 +14,8 @@ export interface SwitchOutcome {
   toBus?: BusMessage;
 }
 
-// to: 'cli' — оркестратор не уведомляется о переключении (constraint spec, ARCHITECTURE §8);
-// route() не доставляет to:'cli' ни одному агенту.
+// to: 'cli' - the orchestrator is not notified of the switch (constraint spec, ARCHITECTURE §8);
+// route() does not deliver to:'cli' to any agent.
 function notify(event: string, agentId: string, now: string, details?: string): BusMessage {
   const payload: NotifyPayload = { event, agent_id: agentId, details };
   return { id: randomUUID(), from: 'cli', to: 'cli', type: 'NOTIFY', ts: now, payload };
@@ -25,16 +25,16 @@ function findStandbyBackup(registry: AgentsRegistry, agentId: string): Registere
   return Object.values(registry).find((a) => a.is_backup_for === agentId && a.status === 'STANDBY');
 }
 
-// Шаг 1-2: статус -> SWITCHING, запрос MEMORY.md инлайном (не "напиши как в скилле" — constraint,
-// внимание модели к далёкому контексту деградирует к этому моменту треда).
+// Step 1-2: status -> SWITCHING, request MEMORY.md inline (not “write as in the skill” - constraint,
+// the model's attention to distant context is degrading by this point in the thread).
 export function beginSwitch(registry: AgentsRegistry, agentId: string, now: string, memoryTemplate: string): SwitchOutcome {
   const agent = registry[agentId];
   if (!agent) return { registry };
 
   const backup = findStandbyBackup(registry, agentId);
   if (!backup) {
-    // BLOCKED — переходный статус (не IDLE/WORKING): router буферизует адресованные агенту
-    // задачи, очередь не теряется, пока пользователь не назначит бэкап вручную (constraint).
+    // BLOCKED - transitional status (not IDLE/WORKING): router buffers messages addressed to the agent
+    // tasks, the queue is not lost until the user assigns a backup manually (constraint).
     const blocked: RegisteredAgent = { ...agent, status: 'BLOCKED' };
     return { registry: { ...registry, [agentId]: blocked }, toBus: notify('NO_BACKUP_AVAILABLE', agentId, now) };
   }
@@ -47,14 +47,14 @@ export function beginSwitch(registry: AgentsRegistry, agentId: string, now: stri
   return { registry: { ...registry, [agentId]: updated }, toCommand: { instanceId: agent.instance_id, message: command } };
 }
 
-// Шаг 3-5: MEMORY.md (или, если агент не успел его отдать, реконструированный контекст из шины —
-// последний TASK + записанные файлы, вызывающая сторона строит эту строку) уходит в бэкап-инстанс.
+// Step 3-5: MEMORY.md (or, if the agent did not have time to give it, the reconstructed context from the bus -
+// last TASK + recorded files, the caller builds this line) goes to the backup instance.
 export function completeMemoryHandoff(
   registry: AgentsRegistry,
   agentId: string,
   now: string,
   memoryMd: string | null,
-  reconstructedContext = 'нет MEMORY.md и данных для реконструкции',
+  reconstructedContext = 'no MEMORY.md and data to reconstruct',
 ): SwitchOutcome {
   const agent = registry[agentId];
   if (!agent) return { registry };
@@ -70,9 +70,9 @@ export function completeMemoryHandoff(
   return { registry: { ...registry, [backup.agent_id]: updatedBackup }, toCommand: { instanceId: backup.instance_id, message: command } };
 }
 
-// Шаг 6-8: бэкап ответил READY -> agent_id переезжает на его instance/tab, старая запись (под
-// agent_id бэкапа) сливается в основную и исчезает из реестра. Очередь агента флашится вызывающей
-// стороной (mainLoop) тем же generic-механизмом, что и обычный READY (router.flushBuffered).
+// Step 6-8: backup responded READY -> agent_id moves to its instance/tab, old entry (under
+// agent_id of the backup) is merged into the main one and disappears from the registry. The agent's queue is flushed by the caller
+// side (mainLoop) using the same generic mechanism as regular READY (router.flushBuffered).
 export function completeBackupActivation(registry: AgentsRegistry, backupAgentId: string, now: string): SwitchOutcome {
   const backup = registry[backupAgentId];
   if (!backup || !backup.is_backup_for) return { registry };

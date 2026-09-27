@@ -1,4 +1,4 @@
-// Ручной прогон пяти fs.*-функций на реальной ФС (spec_file_access, порядок реализации шаг 1).
+// Manually running five fs.* functions on a real file system (spec_file_access, implementation order step 1).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';

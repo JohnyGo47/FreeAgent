@@ -1,4 +1,4 @@
-// Главный цикл, шаг 1 (spec_cli): merge incoming/*.jsonl → message_bus.jsonl.
+// Main loop, step 1 (spec_cli): merge incoming/*.jsonl → message_bus.jsonl.
 import { readdir, readFile, truncate } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BusWriter } from '../bus/write.ts';
@@ -14,8 +14,8 @@ export async function scanIncoming(incomingDir: string, writer: BusWriter): Prom
     if (lines.length === 0) continue;
     const result = await writer.mergeOnce(lines);
     appended += result.appended;
-    // incoming не ротируется (spec_bus_rotation): CLI уже вычитал и смержил содержимое в главную
-    // шину, truncate безопасен — сбрасывает "курсор" (номер строки) следующего чтения в 0.
+    // incoming is not rotated (spec_bus_rotation): CLI has already read and merged the contents into the main one
+    // bus, truncate is safe - resets the "cursor" (line number) of the next read to 0.
     await truncate(filePath, 0).catch(() => {});
   }
   return { appended };

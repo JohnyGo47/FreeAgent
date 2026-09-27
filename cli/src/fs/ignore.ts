@@ -1,7 +1,7 @@
-// Фильтр мусора для list/search (spec_file_access "list обязан фильтровать мусор по умолчанию").
-// ponytail: упрощённый gitignore-матчер (без **, отрицаний, escape-последовательностей) —
-// покрывает обычные строки/каталоги/*.ext из .gitignore и .freeagentignore. Апгрейд до полного
-// gitignore-парсера — когда реальные проекты покажут, что этого не хватает.
+// Garbage filter for list/search (spec_file_access "list must filter garbage by default").
+// ponytail: simplified gitignore matcher (no **, negations, escape sequences) -
+// covers regular strings/directories/*.ext from .gitignore and .freeagentignore. Upgrade to full
+// gitignore parser - when real projects show that this is missing.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SECRET_FILE_PATTERNS } from './privacyRules.ts';
@@ -38,8 +38,8 @@ export function buildMatcher(patterns: string[]): IgnoreMatcher {
   };
 }
 
-// Секретные паттерны (privacyRules) подмешаны сюда же — дерево/поиск не должны показывать
-// .env/*.pem наравне с обычным мусором (spec_context_privacy_filter B, "не виден в дереве").
+// Secret patterns (privacyRules) are mixed in here - the tree/search should not be shown
+// .env/*.pem is just like regular garbage (spec_context_privacy_filter B, "not visible in the tree").
 export async function loadIgnoreMatcher(root: string): Promise<IgnoreMatcher> {
   const patterns = [
     ...BUILTIN_JUNK,

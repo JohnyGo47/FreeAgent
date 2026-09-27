@@ -15,7 +15,7 @@ function tabState(state: TabStatePayload['state'], agent_id = 'coder1'): TabStat
   return { agent_id, state };
 }
 
-test('TAB_STATE: closed -> команда восстановления отправлена немедленно, без ожидания таймаута', () => {
+test('TAB_STATE: closed -> restore command sent immediately, without waiting for timeout', () => {
   const outcome = recoverAgent({
     registry: registryWith('IDLE'),
     payload: tabState('closed'),
@@ -30,7 +30,7 @@ test('TAB_STATE: closed -> команда восстановления отпр�
   assert.equal(outcome.registry.coder1.attempts, 1);
 });
 
-test('recovery не триггерится в статусах SWITCHING, SERVICE_DOWN, STANDBY, FAILED', () => {
+test('recovery is not triggered in the statuses SWITCHING, SERVICE_DOWN, STANDBY, FAILED', () => {
   for (const status of ['SWITCHING', 'SERVICE_DOWN', 'STANDBY', 'FAILED'] as const) {
     const registry = registryWith(status);
     const outcome = recoverAgent({ registry, payload: tabState('closed'), roleMd: 'ROLE', now: 'now', memoryMd: null });
@@ -40,7 +40,7 @@ test('recovery не триггерится в статусах SWITCHING, SERVIC
   }
 });
 
-test('после 3 попыток подряд -> FAILED + NOTIFY, дальше не пытается', () => {
+test('after 3 attempts in a row -> FAILED + NOTIFY, does not try further', () => {
   let registry = registryWith('IDLE');
   for (let i = 0; i < 3; i++) {
     const outcome = recoverAgent({ registry, payload: tabState('closed'), roleMd: 'ROLE', now: 'now', memoryMd: null });
@@ -53,7 +53,7 @@ test('после 3 попыток подряд -> FAILED + NOTIFY, дальше 
   assert.equal(fourth.toCommand, undefined);
 });
 
-test('агент с MEMORY.md получает RECOVERY CONTEXT с его содержимым; без него — базовый промпт', () => {
+test('agent with MEMORY.md receives RECOVERY CONTEXT with its contents; without it - basic prompt', () => {
   const withMemory = recoverAgent({
     registry: registryWith('IDLE'),
     payload: tabState('closed'),
@@ -78,7 +78,7 @@ test('агент с MEMORY.md получает RECOVERY CONTEXT с его сод
   assert.doesNotMatch(textWithout, /working on X/);
 });
 
-test('задача, отправленная агенту в INITIALIZING (recovering), буферизуется и доставляется после READY', () => {
+test('task sent to agent in INITIALIZING (recovering) is buffered and delivered after READY', () => {
   const registry = registryWith('INITIALIZING');
   const buffered: Record<string, BusMessage[]> = {};
   const task: BusMessage = { id: 't1', from: 'orchestrator', to: 'coder1', type: 'TASK', ts: 'now', payload: { task_id: 't1', description: 'x' } };
@@ -88,7 +88,7 @@ test('задача, отправленная агенту в INITIALIZING (recov
   assert.equal(buffered.coder1.length, 1);
 });
 
-test('команда восстановления пишется в файл инстанса и пользователь уведомлён (на случай, если браузер закрыт)', () => {
+test('recovery command is written to the instance file and the user is notified (in case the browser is closed)', () => {
   const outcome = recoverAgent({
     registry: registryWith('IDLE'),
     payload: tabState('closed'),
@@ -100,14 +100,27 @@ test('команда восстановления пишется в файл и�
   assert.equal(outcome.toBus?.type, 'NOTIFY');
 });
 
-test('TAB_STATE: alive -> ничего не делает', () => {
+test('TAB_STATE: alive -> does nothing', () => {
   const registry = registryWith('IDLE');
   const outcome = recoverAgent({ registry, payload: tabState('alive'), roleMd: 'ROLE', now: 'now', memoryMd: null });
   assert.deepEqual(outcome.registry, registry);
   assert.equal(outcome.toCommand, undefined);
 });
 
-test('неизвестный agent_id в payload -> no-op', () => {
+test('TAB_STATE: alive returns a startup SERVICE_DOWN agent to IDLE', () => {
+  const outcome = recoverAgent({
+    registry: registryWith('SERVICE_DOWN', { attempts: 2 }),
+    payload: tabState('alive'),
+    roleMd: 'ROLE',
+    now: 'now',
+    memoryMd: null,
+  });
+  assert.equal(outcome.registry.coder1.status, 'IDLE');
+  assert.equal(outcome.registry.coder1.attempts, 0);
+  assert.equal(outcome.toCommand, undefined);
+});
+
+test('unknown agent_id in payload -> no-op', () => {
   const registry = registryWith('IDLE');
   const outcome = recoverAgent({ registry, payload: tabState('closed', 'ghost1'), roleMd: 'ROLE', now: 'now', memoryMd: null });
   assert.deepEqual(outcome.registry, registry);

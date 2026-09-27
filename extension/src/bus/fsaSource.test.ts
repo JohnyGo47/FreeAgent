@@ -14,24 +14,6 @@ class FakeFileHandle {
   }
 }
 
-// Мок FileSystemObserver — только та часть API, что использует FsaSource.
-class FakeObserver {
-  static instances: FakeObserver[] = [];
-  callback: () => void;
-  disconnected = false;
-  constructor(callback: () => void) {
-    this.callback = callback;
-    FakeObserver.instances.push(this);
-  }
-  async observe(_handle: unknown): Promise<void> {}
-  disconnect(): void {
-    this.disconnected = true;
-  }
-  fire(): void {
-    this.callback();
-  }
-}
-
 async function collectN<T>(gen: AsyncGenerator<T>, n: number, timeoutMs = 2000): Promise<T[]> {
   const results: T[] = [];
   const collect = (async () => {
@@ -60,36 +42,10 @@ test('initial watch() yields the content already on disk', async () => {
   assert.deepEqual(lines.map((l: BusLine) => l.text), ['line-one']);
 });
 
-test('with FileSystemObserver available, a fired change yields the updated content', async (t) => {
+test('polling picks up changes even if an experimental FileSystemObserver exists', async () => {
   const g = globalThis as { FileSystemObserver?: unknown };
   const prev = g.FileSystemObserver;
-  g.FileSystemObserver = FakeObserver;
-  t.after(() => {
-    g.FileSystemObserver = prev;
-  });
-
-  const handle = new FakeFileHandle('line-one\n');
-  const source = new FsaSource(handle as unknown as FileSystemFileHandle);
-  const gen = source.watch();
-
-  const first = await gen.next();
-  assert.deepEqual(first.value!.linesAfter(0).map((l: BusLine) => l.text), ['line-one']);
-
-  const secondPromise = gen.next();
-  await new Promise((r) => setTimeout(r, 10)); // let the generator construct+observe before it awaits the wake signal
-  handle.content += 'line-two\n';
-  const observer = FakeObserver.instances.at(-1)!;
-  observer.fire();
-
-  const second = await secondPromise;
-  assert.deepEqual(second.value!.linesAfter('line-one\n'.length).map((l: BusLine) => l.text), ['line-two']);
-  await gen.return(undefined);
-});
-
-test('without FileSystemObserver, falls back to polling and still picks up changes', async () => {
-  const g = globalThis as { FileSystemObserver?: unknown };
-  const prev = g.FileSystemObserver;
-  delete g.FileSystemObserver;
+  g.FileSystemObserver = class BrokenObserver {};
 
   try {
     const handle = new FakeFileHandle('line-one\n');

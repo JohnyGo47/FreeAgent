@@ -1,9 +1,9 @@
-// spec_plan_execution — unit-тесты движка исполнения. Тесты 4/5 (цикл/unknown agent отклонены)
-// уже покрыты orchestrator/plan.test.ts (validatePlan — общий код, задача B.8 говорит не
-// дублировать). Тест 9 (SWITCHING → очередь) — интеграционный, требует mainLoop/router; живёт в
-// planExecution.integration.test.ts. Тест 7 (красные тесты → эскалация) заходом 2 стал доступен:
-// applyResult реально зовёт verification (verifyFn инъецируется здесь для скорости/чистоты
-// юнит-тестов — реальный прогон процесса проверяется в verification.test.ts и
+// spec_plan_execution - unit tests of the execution engine. Tests 4/5 (cycle/unknown agent rejected)
+// already covered orchestrator/plan.test.ts (validatePlan - general code, task B.8 says not
+// duplicate). Test 9 (SWITCHING → queue) - integration, requires mainLoop/router; lives in
+// planExecution.integration.test.ts. Test 7 (red tests → escalation) by run 2 became available:
+// applyResult actually calls verification (verifyFn is injected here for speed/cleanliness
+// unit tests - the actual process run is checked in verification.test.ts and
 // planExecution.integration.test.ts).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,21 +39,21 @@ function resultMsg(taskId: string, agentId: string, status: 'DONE' | 'FAILED', s
   return { id: 'r', from: agentId, to: 'orchestrator', type: 'RESULT', ts: new Date().toISOString(), payload };
 }
 
-// Юнит-тесты сценариев планирования не про verification сами по себе — им нужна ok-заглушка,
-// чтобы не гонять реальный процесс на каждый DONE. Реальный verifyStep проверяется отдельно
-// (verification.test.ts) и в интеграции (planExecution.integration.test.ts).
+// Unit tests for planning scenarios are not about verification in themselves - they need an ok stub,
+// so as not to run the real process for every DONE. The real verifyStep is checked separately
+// (verification.test.ts) and in integration (planExecution.integration.test.ts).
 const okVerify = async (): Promise<VerifyVerdict> => ({ kind: 'ok', log: '' });
 const ctx: VerifyContext = { cwd: '.', timeoutMs: 1000, logsDir: '.', verifyFn: okVerify };
 
 const LINEAR_3 = [
   '[PLAN]',
-  'STEP 1 | researcher1 | Найти практики | FILES: research/jwt.md | DEPENDS: none',
-  'STEP 2 | coder1 | Написать middleware | FILES: src/auth.ts | DEPENDS: 1',
-  'STEP 3 | coder1 | Подключить роутер | FILES: src/router.ts | DEPENDS: 2',
+  'STEP 1 | researcher1 | Find practices | FILES: research/jwt.md | DEPENDS: none',
+  'STEP 2 | coder1 | Write middleware | FILES: src/auth.ts | DEPENDS: 1',
+  'STEP 3 | coder1 | Connect router | FILES: src/router.ts | DEPENDS: 2',
   '[/PLAN]',
 ].join('\n');
 
-test('линейный план из 3 шагов: только шаг 1 сразу готов, следующий открывается только после RESULT:DONE предыдущего', async () => {
+test('linear plan of 3 steps: only step 1 is ready immediately, the next one opens only after RESULT:DONE of the previous one', async () => {
   let state = startExecution(plan(LINEAR_3));
 
   let round = nextTasks(state);
@@ -84,7 +84,7 @@ test('линейный план из 3 шагов: только шаг 1 сра�
   assert.equal(isComplete(after3.state), true);
 });
 
-test('два независимых шага без пересечения files -> оба уходят в одном раунде (параллельно)', () => {
+test('two independent steps without crossing files -> both go in one round (in parallel)', () => {
   const p = plan(
     ['[PLAN]', 'STEP 1 | coder1 | a | FILES: src/a.ts | DEPENDS: none', 'STEP 2 | coder2 | b | FILES: src/b.ts | DEPENDS: none', '[/PLAN]'].join('\n'),
   );
@@ -94,29 +94,29 @@ test('два независимых шага без пересечения files
   assert.deepEqual(round.tasks.map((t) => t.to).sort(), ['coder1', 'coder2']);
 });
 
-test('два шага с пересекающимися files и без depends_on -> только один уходит сейчас, второй ждёт освобождения файла', async () => {
+test('two steps with overlapping files and without depends_on -> only one leaves now, the second waits for the file to be released', async () => {
   const p = plan(
     ['[PLAN]', 'STEP 1 | coder1 | a | FILES: shared.ts | DEPENDS: none', 'STEP 2 | coder2 | b | FILES: shared.ts | DEPENDS: none', '[/PLAN]'].join('\n'),
   );
   let state = startExecution(p);
 
   const round1 = nextTasks(state);
-  assert.equal(round1.tasks.length, 1); // последовательно, не параллельно — несмотря на отсутствие depends_on
+  assert.equal(round1.tasks.length, 1); // sequentially, not parallel - despite the absence of depends_on
   state = round1.state;
 
-  const round2 = nextTasks(state); // шаг 1 ещё 'sent' (RESULT не пришёл) — файл занят
+  const round2 = nextTasks(state); // step 1 still 'sent' (RESULT did not arrive) - file is busy
   assert.equal(round2.tasks.length, 0);
 
   const taskId = (round1.tasks[0].payload as { task_id: string }).task_id;
   const doneAgent = round1.tasks[0].to;
   const after = await applyResult(state, resultMsg(taskId, doneAgent, 'DONE'), 70, ctx);
 
-  const round3 = nextTasks(after.state); // файл освободился -> второй шаг теперь готов
+  const round3 = nextTasks(after.state); // file freed -> second step is now ready
   assert.equal(round3.tasks.length, 1);
   assert.notEqual(round3.tasks[0].to, doneAgent);
 });
 
-test('RESULT: FAILED -> эскалация с текстом ошибки, зависимые шаги не стартуют', async () => {
+test('RESULT: FAILED -> escalation with error text, dependent steps do not start', async () => {
   const p = plan(LINEAR_3);
   let state = startExecution(p);
   const round = nextTasks(state);
@@ -127,19 +127,19 @@ test('RESULT: FAILED -> эскалация с текстом ошибки, за�
   if (after.event.kind === 'escalate') assert.match(after.event.reason, /boom/);
 
   const nextRound = nextTasks(after.state);
-  assert.equal(nextRound.tasks.length, 0); // шаг 2 зависит от заваленного шага 1 — не открывается
+  assert.equal(nextRound.tasks.length, 0); // step 2 depends on failed step 1 - does not open
 });
 
-// spec_plan_execution Test 7 (задача A.7 захода 2): "красные тесты" — теперь доступно.
-// verifyFn стоит на месте реального verifyStep (spec_verification), тестируется как контракт.
-test('RESULT: DONE, но verification вернула failed ("красные тесты") -> эскалация, зависимые шаги не стартуют', async () => {
+// spec_plan_execution Test 7 (task A.7 of run 2): “red tests” - now available.
+// verifyFn stands in place of the real verifyStep (spec_verification), tested as a contract.
+test('RESULT: DONE, but verification returned failed ("red tests") -> escalation, dependent steps do not start', async () => {
   const p = plan(LINEAR_3);
   let state = startExecution(p);
   const round = nextTasks(state);
   const taskId = (round.tasks[0].payload as { task_id: string }).task_id;
 
   const redVerify = async (params: VerifyParams): Promise<VerifyVerdict> => {
-    assert.equal(params.taskId, taskId); // applyResult реально прокидывает task_id в verification
+    assert.equal(params.taskId, taskId); // applyResult actually applies task_id to verification
     return { kind: 'failed', reason: 'AssertionError: expected 2 to equal 3' };
   };
 
@@ -151,8 +151,8 @@ test('RESULT: DONE, но verification вернула failed ("красные т�
   assert.equal(nextRound.tasks.length, 0);
 });
 
-test('RESULT: DONE, verification unverified (нет TESTS_READY) -> шаг закрыт, но помечен unverified', async () => {
-  const p = plan(['[PLAN]', 'STEP 1 | researcher1 | ресёрч | FILES: research.md | DEPENDS: none', '[/PLAN]'].join('\n'));
+test('RESULT: DONE, verification unverified (no TESTS_READY) -> step closed but marked unverified', async () => {
+  const p = plan(['[PLAN]', 'STEP 1 | researcher1 | research | FILES: research.md | DEPENDS: none', '[/PLAN]'].join('\n'));
   const state = startExecution(p);
   const round = nextTasks(state);
   const taskId = (round.tasks[0].payload as { task_id: string }).task_id;
@@ -162,10 +162,10 @@ test('RESULT: DONE, verification unverified (нет TESTS_READY) -> шаг за�
 
   assert.equal(after.event.kind, 'complete');
   assert.equal(after.unverified, true);
-  assert.ok(after.state.unverifiedSteps.has(1)); // "видим пользователю", не выдан за проверенный
+  assert.ok(after.state.unverifiedSteps.has(1)); // "visible to the user", not passed off as verified
 });
 
-test('recordTestsReady: command сохраняется против шага по task_id, доходит до verifyFn при DONE', async () => {
+test('recordTestsReady: command saved against step by task_id, reaches verifyFn on DONE', async () => {
   const p = plan(['[PLAN]', 'STEP 1 | coder1 | a | FILES: a.ts | DEPENDS: none', '[/PLAN]'].join('\n'));
   const round = nextTasks(startExecution(p));
   const taskId = (round.tasks[0].payload as { task_id: string }).task_id;
@@ -182,17 +182,17 @@ test('recordTestsReady: command сохраняется против шага п�
   assert.equal(seenCommand, 'npm test');
 });
 
-test('self_assessment ниже порога -> эскалация, даже если status: DONE', async () => {
-  const p = plan(['[PLAN]', 'STEP 1 | researcher1 | ресёрч | FILES: research.md | DEPENDS: none', '[/PLAN]'].join('\n'));
+test('self_assessment below threshold -> escalation even if status: DONE', async () => {
+  const p = plan(['[PLAN]', 'STEP 1 | researcher1 | research | FILES: research.md | DEPENDS: none', '[/PLAN]'].join('\n'));
   const state = startExecution(p);
   const round = nextTasks(state);
   const taskId = (round.tasks[0].payload as { task_id: string }).task_id;
 
-  const after = await applyResult(round.state, resultMsg(taskId, 'researcher1', 'DONE', 'сделано, наверное', 40), 70, ctx);
+  const after = await applyResult(round.state, resultMsg(taskId, 'researcher1', 'DONE', 'probably done', 40), 70, ctx);
   assert.equal(after.event.kind, 'escalate');
 });
 
-test('WRITE вне заявленных files текущего шага -> ERROR, файл не записан', async (t) => {
+test('WRITE outside the declared files of the current step -> ERROR, the file was not written', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'freeagent-planexec-'));
   t.after(() => rm(root, { recursive: true, force: true }));
 
@@ -210,14 +210,14 @@ test('WRITE вне заявленных files текущего шага -> ERROR
   await assert.rejects(readFile(join(root, 'src', 'other.ts'), 'utf8'));
 });
 
-test('recordWrittenFile: файлы шага копятся, доходят до verifyFn как writtenFiles', async () => {
+test('recordWrittenFile: step files are accumulated, reach verifyFn as writtenFiles', async () => {
   const p = plan(['[PLAN]', 'STEP 1 | coder1 | a | FILES: a.ts, b.ts | DEPENDS: none', '[/PLAN]'].join('\n'));
   const round = nextTasks(startExecution(p));
   const taskId = (round.tasks[0].payload as { task_id: string }).task_id;
 
   let state = recordWrittenFile(round.state, 'coder1', 'a.ts');
   state = recordWrittenFile(state, 'coder1', 'b.ts');
-  state = recordWrittenFile(state, 'coder1', 'a.ts'); // дубликат — не размножается
+  state = recordWrittenFile(state, 'coder1', 'a.ts'); // duplicate - does not reproduce
 
   let seen: string[] | undefined;
   const captureVerify = async (params: VerifyParams): Promise<VerifyVerdict> => {
@@ -228,14 +228,14 @@ test('recordWrittenFile: файлы шага копятся, доходят до
   assert.deepEqual(seen, ['a.ts', 'b.ts']);
 });
 
-test('currentStepFilesForAgent: агент вне активного шага -> null (уровень-3 пропускается)', () => {
+test('currentStepFilesForAgent: agent outside active step -> null (level-3 skipped)', () => {
   const p = plan(['[PLAN]', 'STEP 1 | coder1 | a | FILES: src/a.ts | DEPENDS: none', '[/PLAN]'].join('\n'));
   const state = startExecution(p);
-  assert.equal(currentStepFilesForAgent(state, 'coder1'), null); // TASK ещё не отправлена
-  assert.equal(currentStepFilesForAgent(state, 'coder9'), null); // не участвует в плане вовсе
+  assert.equal(currentStepFilesForAgent(state, 'coder1'), null); // TASK has not been sent yet
+  assert.equal(currentStepFilesForAgent(state, 'coder9'), null); // does not participate in the plan at all
 });
 
-test('дедупликация: 20 одинаковых STATUS подряд -> 0 сообщений оркестратору', () => {
+test('deduplication: 20 identical STATUS in a row -> 0 messages to orchestrator', () => {
   const p = plan(LINEAR_3);
   let state = startExecution(p);
   let forwarded = 0;
@@ -249,7 +249,7 @@ test('дедупликация: 20 одинаковых STATUS подряд -> 0
   assert.equal(forwarded, 0);
 });
 
-test('/stop: nextTasks перестаёт отправлять новые задачи после stopExecution', () => {
+test('/stop: nextTasks stops sending new tasks after stopExecution', () => {
   const p = plan(
     ['[PLAN]', 'STEP 1 | coder1 | a | FILES: a.ts | DEPENDS: none', 'STEP 2 | coder2 | b | FILES: b.ts | DEPENDS: none', '[/PLAN]'].join('\n'),
   );
@@ -258,7 +258,7 @@ test('/stop: nextTasks перестаёт отправлять новые зад
   assert.equal(round.tasks.length, 0);
 });
 
-test('applyOwnershipViolation: WRITE вне files -> эскалация (независимо от verification)', () => {
+test('applyOwnershipViolation: WRITE outside files -> escalation (regardless of verification)', () => {
   const p = plan(['[PLAN]', 'STEP 1 | coder1 | a | FILES: a.ts | DEPENDS: none', '[/PLAN]'].join('\n'));
   const round = nextTasks(startExecution(p));
   const outcome = applyOwnershipViolation(round.state, 'coder1', 'other.ts');

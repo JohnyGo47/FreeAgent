@@ -9,7 +9,7 @@ async function tmpDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'freeagent-session-'));
 }
 
-test('вторая CLI-сессия отказывается стартовать с внятной ошибкой, пока первая держит лок', async (t) => {
+test('the second CLI session refuses to start with a clear error while the first one is locked', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
 
@@ -21,7 +21,7 @@ test('вторая CLI-сессия отказывается стартоват�
   await second.release();
 });
 
-test('лок от мёртвого процесса (несуществующий pid) переиспользуется, не блокирует новую сессию', async (t) => {
+test('lock from a dead process (non-existent pid) is reused, does not block a new session', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
 

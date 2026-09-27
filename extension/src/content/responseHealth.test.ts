@@ -20,7 +20,7 @@ function base(overrides: Partial<Parameters<ResponseHealthTracker['classify']>[0
   };
 }
 
-test('каждый из четырёх классов детектируется по своему признаку', () => {
+test('each of the four classes is detected according to its own characteristic', () => {
   const t = new ResponseHealthTracker();
   assert.equal(t.classify(base({ text: 'oops, service is temporarily unavailable, try later' })), 'unavailable');
   assert.equal(t.classify(base({ text: 'oops, rate limit exceeded' })), 'rate_limited');
@@ -29,22 +29,22 @@ test('каждый из четырёх классов детектируется
   assert.equal(t.classify(base({ text: 'huh again', parsedMessageCount: 0 })), 'no_tags'); // twice in a row — trigger
 });
 
-test('no_tags: один раз — не триггер, два подряд — триггер', () => {
+test('no_tags: once is not a trigger, twice in a row is a trigger', () => {
   const t = new ResponseHealthTracker();
   assert.equal(t.classify(base({ text: 'short', parsedMessageCount: 0 })), null);
   const healthy = t.classify(base({ text: 'a normal, healthy, tagged response' }));
   assert.equal(healthy, null);
-  // после здорового ответа счётчик сброшен — следующий короткий снова не триггерит сам по себе
+  // after a healthy response the counter is reset - the next short one again does not trigger on its own
   assert.equal(t.classify(base({ text: 'short again', parsedMessageCount: 0 })), null);
 });
 
-test('context_full по счётчику символов треда (без паттерна в тексте)', () => {
+test('context_full by thread character counter (without a pattern in the text)', () => {
   const t = new ResponseHealthTracker();
   const klass = t.classify(base({ text: 'ordinary text, no failure phrase', threadCharCount: 65000, contextWindow: 100000, contextThresholdPct: 60 }));
   assert.equal(klass, 'context_full');
 });
 
-test('под порогом контекста и без паттернов — здоровый ответ', () => {
+test('under the context threshold and without patterns is a healthy answer', () => {
   const t = new ResponseHealthTracker();
   assert.equal(t.classify(base()), null);
 });

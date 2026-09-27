@@ -1,63 +1,63 @@
 # Spec: selector_resilience
-# Version: 2.0 — схема адаптера не дублируется
-# Читать вместе с ARCHITECTURE.md, схема адаптера — в spec_llm_adapter_registry
+# Version: 2.0 — Adapter scheme is not duplicated
+# Reading with ARCHITECTURE.md, adapter scheme spec_llm_adapter_registry
 
 ## Goal
-DOM-селекторы гниют: сервисы меняют вёрстку без предупреждения. Превратить главную слабость в опенсорс-преимущество: fallback-цепочки, self-healing с подтверждением, community-registry через GitHub.
+DOM-selectors rot: Services change layout without warning. Turning a major weakness into an open source advantage: fallback-chain, self-healing confirmatory, community-registry through GitHub.
 
 ## Input
-- Локальный `llm_adapter_registry.json` + `selector_overrides.json`
-- Удалённый registry по `registry_url` из конфига
-- DOM текущей страницы
+- Local. `llm_adapter_registry.json` + `selector_overrides.json`
+- Remote. registry posteriorly `registry_url` configurable
+- DOM current page
 
 ## Output
-- Рабочий селектор (цепочка → свежий registry → подтверждение пользователя)
-- Обновлённый `selector_overrides.json`
-- Опционально: pre-filled ссылка на GitHub issue с новым селектором
+- Work selector (chain → fresh registry → proof-of-use)
+- Updated. `selector_overrides.json`
+- Optionally.: pre-filled reference GitHub issue new-selector
 
 ## Contract
 
-### Порядок разрешения
+### Permission procedure
 ```
-локальный override → цепочка из registry по порядку → self-healing эвристика → BLOCKED
+local override → chain registry orderly → self-healing heuristic → BLOCKED
 ```
 
 ### Self-healing
-Эвристики кандидатов:
-- **input** — самый большой видимый `[contenteditable=true]` или `textarea` во viewport
-- **submit** — ближайшая к input кнопка с aria-label/иконкой отправки или `type=submit`
-- **response_container** — контейнер с максимальным приростом текста при следующем **реальном** ответе. Тестовые сообщения автоматически не отправляются
+Candidate heuristics:
+- **input** — largest visible `[contenteditable=true]` or `textarea` vent viewport
+- **submit** — near- input button aria-label/shipment icon or `type=submit`
+- **response_container** — container with maximum text growth in the following **real** reply. Test messages are not automatically sent
 
-**Никогда не применяется молча.** Кандидат подсвечивается outline, пользователь подтверждает/отклоняет минимальным тултипом («Это поле ввода? ✓ / ✗»), не модалкой. До подтверждения агент в статусе `SELECTOR_BROKEN`, задача приостановлена.
+**Never used silently.** Candidate highlighted outline, user/reject («This is the input field.? ✓ / ✗»), non-modal. Prior to confirmation, agent status `SELECTOR_BROKEN`, task-suspend.
 
-Статус в реестр пишет CLI (расширение шлёт сообщение) — реестр имеет единственного writer'а.
+Status on the register writes CLI (scattering) — register writer'?.
 
 ### Community-registry
-- Проверка обновлений раз в 24ч (`chrome.alarms`) по `registry_version` с GitHub raw
-- Сетевая ошибка → молча работать на локальном
-- Подтверждённый селектор пишется в override **локально сразу**; отправка в community — только по явному действию пользователя (никакой автоматической телеметрии)
-- В репо: CI-проверка схемы для PR, CONTRIBUTING-секция «как починить селектор» как first-issue
+- Verification of updates once in a while 24? (`chrome.alarms`) posteriorly `registry_version` s GitHub raw
+- Network error → quietly
+- The confirmed selector is written in override **locally**; dispatch community — Only by explicit user action (no automatic telemetry)
+- In the repo: CI-check-up PR, CONTRIBUTING-section «How to fix a selector» how first-issue
 
 ## Constraints
-- **Схема адаптера определена в `spec_llm_adapter_registry` и здесь не переопределяется.** Селекторы уже массивы, `registry_version` уже есть
-- `registry_url` конфигурируем — форки указывают свой
+- **The adapter is defined in `spec_llm_adapter_registry` and it's not overridden here..** Selectors are already arrays., `registry_version` already
+- `registry_url` Configuration - Forks indicate their
 
 ## Dependencies
 `spec_llm_adapter_registry`, `spec_ext_manifest`, `spec_fs_folder_access`
 
 ## Tests
 ### Unit
-1. Цепочка: первый селектор null, второй находит → возвращён второй, поломка залогирована
-2. Override приоритетнее registry
-3. Эвристика input на фикстуре Gemini-подобной вёрстки находит contenteditable
-4. Кандидат без подтверждения не используется, агент в `SELECTOR_BROKEN`
-5. `registry_version` удалённого выше → локальный обновлён; ниже или сеть упала → нетронут
-6. Статус `SELECTOR_BROKEN` попадает в реестр через CLI, не напрямую из расширения
+1. Chain.: first selector null, second-in-command → second-hand, breakdown secured
+2. Override priority registry
+3. Heuristics input fixture Gemini-finds such a layout contenteditable
+4. Candidate without confirmation is not used, agent `SELECTOR_BROKEN`
+5. `registry_version` higher → locally updated; down or the net fell → intact
+6. Status `SELECTOR_BROKEN` enters the register through CLI, not directly from the expansion
 
 ### Integration check
-Сломать селектор input для одного сервиса в локальном registry → расширение подсвечивает кандидата → подтверждение → агент продолжает, override сохранён
+Break the selector input for one service in a local registry → extension highlights the candidate → confirmation → agent, override preserved
 
 ### Definition of done
-- Тесты зелёные, integration check пройден
-- Схема адаптера не продублирована
-- Прогон integration check'ов предыдущих PR
+- Tests green., integration check passed
+- Adapter circuit is not duplicated
+- Run. integration check'previous PR

@@ -1,86 +1,86 @@
 # Spec: llm_message_format
 # Version: 1.0
-# Читать вместе с ARCHITECTURE.md (§3 путь сообщения, §4 формат)
+# Reading with ARCHITECTURE.md (§3 route, §4 format)
 
 ## Goal
-Инжект тег-блоков в DOM вкладки LLM и извлечение тег-блоков из ответа. Мост между JSON-шиной (мир CLI) и текстовым чатом (мир LLM).
+Tag-block injection in DOM tab LLM and extracting tag blocks from the response. Bridge between JSON-tire (world CLI) text-chat (world LLM).
 
 ## Input
-- **Инжект:** `BusMessage` из `commands/`, конвертированное в тег-текст через `toTagFormat`
-- **Извлечение:** текст ответа из DOM `response_container`, парсится `fromTagFormat`
+- **Injection:** `BusMessage` from `commands/`, tag-text-converted `toTagFormat`
+- **Extraction:** text DOM `response_container`, scatter `fromTagFormat`
 
 ## Output
-- **Инжект:** текст вставлен в `selectors.input`, кнопка `selectors.submit` нажата
-- **Извлечение:** массив `BusMessage`, записанных в `incoming/<instance_id>.jsonl`
+- **Injection:** text inserted `selectors.input`, button `selectors.submit` pressed
+- **Extraction:** stratum `BusMessage`, recorded `incoming/<instance_id>.jsonl`
 
 ## Contract
 
-### Инжект
+### Injection
 ```
-1. Получить адаптер по домену вкладки
-2. Разрезолвить селектор input (через цепочку fallback из spec_selector_resilience)
-3. Вставить текст:
-     contenteditable → вставка через InputEvent('insertText')
-     textarea → установка .value + dispatch('input')
-4. Разрезолвить селектор submit
-5. Кликнуть submit
-6. Подождать подтверждения отправки:
-     typing_indicator появился → отправлено
-     typing_indicator === null → ждать 500ms (best effort)
-```
-
-**Почему не `element.textContent =`:** многие фреймворки (React, Vue) не слышат прямую запись в DOM. `InputEvent` и dispatch гарантируют, что фреймворк подхватит.
-
-### Извлечение
-```
-1. Дождаться завершения ответа (spec_response_complete_detection)
-2. Прочитать innerText последнего ответа из response_container
-3. Пропустить через fromTagFormat → массив BusMessage
-4. Для каждого:
-     parseBusLine-валидация → ок → записать в incoming
-     невалидный → handleSuspiciousResponse (spec_response_health)
-5. Если fromTagFormat вернул пусто → классификация no_tags
+1. Get an adapter by tab domain
+2. Resolve the selector input (chain-wise fallback from spec_selector_resilience)
+3. Insert text:
+     contenteditable → insertion InputEvent('insertText')
+     textarea → installation .value + dispatch('input')
+4. Resolve the selector submit
+5. Click. submit
+6. Wait for confirmation of shipment:
+     typing_indicator appeared → sent
+     typing_indicator === null → wait 500ms (best effort)
 ```
 
-### Обработка markdown-обёрток
-LLM часто оборачивают ответ в markdown: ` ```\n[MSG|...]\n``` `. Конвертер `fromTagFormat` уже умеет это (`spec_message_bus_types`), но content script дополнительно:
-- ищет теги как в rendered HTML (DOM), так и в raw text (некоторые интерфейсы рендерят markdown, некоторые нет)
-- если DOM содержит `<code>` блок с тегами внутри — извлекает из `textContent` элемента, а не из innerHTML
+**Why not? `element.textContent =`:** many frameworks (React, Vue) They don't hear a direct recording of DOM. `InputEvent` and dispatch guarantee, framework will pick up.
 
-### Множественные блоки в одном ответе
-Оркестратор может выдать несколько `[MSG]` блоков в одном ответе (задачи нескольким агентам). Каждый извлекается отдельно. Текст между блоками (пояснения оркестратора) игнорируется — это шум для парсера, но может быть полезен пользователю → логируется.
+### Extraction
+```
+1. Wait for the answer to be completed (spec_response_complete_detection)
+2. Read innerText last response response_container
+3. Pass through fromTagFormat → stratum BusMessage
+4. For everyone.:
+     parseBusLine-validation → ok → write down incoming
+     faulty → handleSuspiciousResponse (spec_response_health)
+5. If fromTagFormat empty-handed → classification no_tags
+```
+
+### Processing markdown-wrapper
+LLM often wraps the answer in markdown: ` ```\n[MSG|...]\n``` `. converter `fromTagFormat` I already know how to do it. (`spec_message_bus_types`), but content script additionally:
+- tagging rendered HTML (DOM), so raw text (some interfaces render markdown, some of them)
+- if DOM contain `<code>` The tagged block inside - extracts from `textContent` component, not innerHTML
+
+### Multiple blocks in one answer
+Orchestras can give you a few `[MSG]` block-in-the-box (task). Each is extracted separately.. Text between blocks (orchestrator) Ignored - it's noise for parser, But it can be useful to the user. → logged.
 
 ## Constraints
-- Инжект и извлечение — **только в content script** (единственный контекст с доступом к DOM страницы)
-- Content script → offscreen — через `chrome.runtime.sendMessage`
-- Между инжектом и извлечением content script **не блокируется** — он продолжает мониторить другие вкладки. Завершение ответа — событие, а не ожидание
-- Не инжектировать, пока предыдущий ответ не завершён (одна очередь на вкладку)
-- `toTagFormat` и `fromTagFormat` импортируются из `/shared/bus-types` — content script не дублирует конвертацию
+- Injection and extraction — **only content script** (the only context with access to DOM page)
+- Content script → offscreen — through `chrome.runtime.sendMessage`
+- Between the injection and the extraction content script **not blocked** — He keeps monitoring other tabs.. Completion of response - event, not waiting
+- Don't inject, until the previous answer is completed (tab-line)
+- `toTagFormat` and `fromTagFormat` imported `/shared/bus-types` — content script does not duplicate the conversion
 
-### Проводка [FS]/[FS_RESULT] через шину (микро-PR перед PR-5)
-Тело `[FS|...]`-вызова браузер **не парсит**: content script кладёт сырой heredoc-блок от модели в `payload` `BusMessage` типа `FS_CALL` как есть, строкой. Разбирает его только `parseFsCall` в CLI (`spec_file_access`) — здесь, как и во всей шине, действует одно правило: тег-слой payload возит, но не читает. `FS_RESULT` возвращается **вызвавшему агенту** через `commands/<instance_id>` и инжектится в DOM тем же механизмом, что любая команда агенту (§ Инжект выше) — не широковещательно и не напрямую из CLI.
+### Wiring [FS]/[FS_RESULT] tyre-wire (microscopic-PR beforehand PR-5)
+Body. `[FS|...]`-browser **parsite**: content script squash heredoc-block `payload` `BusMessage` type `FS_CALL` how, line. It's just a matter of taking it apart. `parseFsCall` escaping CLI (`spec_file_access`) — here, as in the whole tyre., one-way rule: tag-layer payload cock-carrier, not read. `FS_RESULT` returns **summoner** through `commands/<instance_id>` and injected DOM same-machine, that any team agent (§ Injection higher) — not broadcast or directly from CLI.
 
 ## Dependencies
-`spec_message_bus_types` (конвертеры), `spec_llm_adapter_registry` (селекторы), `spec_selector_resilience` (fallback-цепочки — **PR-6**; в PR-4 резолв простым перебором, см. заметку), `spec_response_complete_detection` (когда ответ готов), `spec_ext_manifest` (content script контекст)
+`spec_message_bus_types` (converter), `spec_llm_adapter_registry` (selectors), `spec_selector_resilience` (fallback-chain — **PR-6**; escaping PR-4 brute-force, centimeter. note), `spec_response_complete_detection` (when the answer is ready), `spec_ext_manifest` (content script context)
 
-> **Резолв селектора без `selector_resilience` (PR-6).** В PR-4 инжект резолвит `input`/`submit` **простым перебором массива** селекторов из `llm_adapter_registry` — первый найденный побеждает. `selector_resilience` (PR-6) позже оборачивает этот резолв self-healing'ом и community-registry, не меняя интерфейс `resolveSelector(chain)`. В PR-4 `selector_resilience` не импортировать — заложить шов.
+> **Resolve selector without `selector_resilience` (PR-6).** V. PR-4 resolvit `input`/`submit` **brute-force** selector `llm_adapter_registry` — first found wins. `selector_resilience` (PR-6) later wraps up this resolution self-healing'om and community-registry, interfaceless `resolveSelector(chain)`. V. PR-4 `selector_resilience` not import - lay the seam.
 
 ## Tests
 ### Unit
-1. Инжект в contenteditable: текст появился, InputEvent dispatched
-2. Инжект в textarea: value установлен, input event dispatched
-3. Submit: кнопка нажата, typing_indicator появился
-4. Извлечение одного `[MSG]` блока → один валидный `BusMessage`
-5. Извлечение двух блоков из одного ответа → два `BusMessage`, текст между ними залогирован
-6. Markdown-обёртка ``` → блок извлечён, обёртка снята
-7. Ответ внутри `<code>` в DOM → извлечён из textContent
-8. Пустой `fromTagFormat` → классификация `no_tags` вызвана
-9. Очередь: второй инжект ждёт завершения первого ответа
+1. Injection in contenteditable: text, InputEvent dispatched
+2. Injection in textarea: value fixed, input event dispatched
+3. Submit: button, typing_indicator appeared
+4. Extracting one `[MSG]` block → one-valid `BusMessage`
+5. Extracting two blocks from one answer → two-way `BusMessage`, text between them is secured
+6. Markdown-wrapper ``` → block removed, wrapper
+7. The answer is inside. `<code>` escaping DOM → extracted textContent
+8. Empty. `fromTagFormat` → classification `no_tags` caused
+9. queue: The second injection is waiting for the first response to be completed.
 
 ### Integration check
-Открыть вкладку LLM → инжектировать тестовый `[MSG]` → дождаться ответа → извлечь → проверить round-trip JSON ⇄ теги ⇄ DOM ⇄ теги ⇄ JSON
+Open the tab LLM → test-inject `[MSG]` → wait → extract → check out round-trip JSON ⇄ tagging ⇄ DOM ⇄ tagging ⇄ JSON
 
 ### Definition of done
-- Тесты зелёные на минимум 2 разных LLM (contenteditable + textarea)
-- Round-trip не теряет и не искажает поля сообщения
-- Прогон integration check'ов предыдущих PR
+- Tests are green at minimum. 2 different LLM (contenteditable + textarea)
+- Round-trip Does not lose or distort the message fields
+- Run. integration check'previous PR

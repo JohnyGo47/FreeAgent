@@ -1,4 +1,4 @@
-// Схема llm_adapter_registry — определена здесь и больше нигде (spec_llm_adapter_registry).
+// Schema llm_adapter_registry - defined here and nowhere else (spec_llm_adapter_registry).
 export interface LLMAdapter {
   domain: string;
   selectors: {
@@ -6,7 +6,7 @@ export interface LLMAdapter {
     submit: string[];
     response_container: string[];
     typing_indicator: string[] | null;
-    stop_button?: string[]; // опционально, spec_response_complete_detection стратегия 3
+    stop_button?: string[]; // optional, spec_response_complete_detection strategy 3
   };
   failure_patterns: {
     unavailable: string[];
@@ -60,8 +60,8 @@ function validateFailurePatterns(x: unknown, prefix: string, errors: string[]): 
   }
 }
 
-// context_window намеренно не required здесь — при отсутствии подставляется из default при загрузке
-// (spec_llm_adapter_registry test 3), это не ошибка схемы.
+// context_window is intentionally not required here - if absent, it is substituted from default when loading
+// (spec_llm_adapter_registry test 3), this is not a circuit error.
 export function validateAdapterRegistry(input: unknown): ValidationResult {
   const errors: string[] = [];
   if (typeof input !== 'object' || input === null) return { ok: false, errors: ['registry: not an object'] };
@@ -99,7 +99,7 @@ export function validateAdapterRegistry(input: unknown): ValidationResult {
   return errors.length === 0 ? { ok: true } : { ok: false, errors };
 }
 
-// Подставляет context_window из default, если адаптер его не задал (spec test 3).
+// Substitutes context_window from default if the adapter has not specified it (spec test 3).
 export function fillAdapterDefaults(registry: AdapterRegistry): AdapterRegistry {
   const adapters: Record<string, LLMAdapter> = {};
   for (const [key, adapter] of Object.entries(registry.adapters)) {
@@ -111,7 +111,7 @@ export function fillAdapterDefaults(registry: AdapterRegistry): AdapterRegistry 
   return { ...registry, adapters };
 }
 
-// Детект: точное совпадение домена → частичное (поддомен) → default.
+// Detect: exact domain match → partial (subdomain) → default.
 export function detectAdapter(hostname: string, registry: AdapterRegistry): LLMAdapter {
   const filled = fillAdapterDefaults(registry);
   if (filled.adapters[hostname]) return filled.adapters[hostname];

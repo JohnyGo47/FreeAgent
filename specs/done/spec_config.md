@@ -1,64 +1,64 @@
 # Spec: config
-# Version: 1.0 — НОВАЯ
-# Читать вместе с ARCHITECTURE.md (§4 instance_id)
+# Version: 1.0 - NEW
+# Read along with ARCHITECTURE.md (§4 instance_id)
 
 ## Goal
-`freeagent.config.json` — единая точка настроек, общая для CLI и расширения. Процедура первого запуска, связывающая обе стороны с одной папкой.
+`freeagent.config.json` is a single configuration point common to the CLI and extension. First run procedure that associates both sides with the same folder.
 
 ## Output
 ```jsonc
 {
   "version": 1,
   "project_root": ".",
-  "context_threshold_pct": 60,        // порог переключения на бэкап
+  "context_threshold_pct": 60, // threshold for switching to backup
   "backoff_ms": [30000, 60000, 120000],
   "init_timeout_ms": 60000,
   "test_timeout_ms": 120000,
   "self_assessment_threshold": 70,
   "mode": "plan",                      // plan | yolo
-  "auto_backup": true,                 // рекомендуется включённым
+  "auto_backup": true, // recommended enabled
   "git_checkpoints": true,
   "checkpoint_branch": false,
   "registry_url": "https://raw.githubusercontent.com/<repo>/main/llm_adapter_registry.json",
   "registry_check_hours": 24,
   "known_instances": {
-    "browser_a1b2c3": { "label": "Chrome — основной", "last_seen": "..." }
+    "browser_a1b2c3": { "label": "Chrome - main", "last_seen": "..." }
   }
 }
 ```
 
 ## Contract
 
-### Связывание CLI и расширения
-Обе стороны работают с одной папкой проекта, но приходят к ней по-разному:
-- CLI — через рабочую директорию (`freeagent init`)
-- расширение — через `showDirectoryPicker`
+### Linking the CLI and extensions
+Both sides work with the same project folder, but arrive at it differently:
+- CLI - via the working directory (`freeagent init`)
+- extension - via `showDirectoryPicker`
 
-Проверка совпадения: `freeagent init` записывает в конфиг маркер `project_id` (UUID). Расширение после выбора папки читает конфиг и показывает `project_id` и метку. Если конфига нет — предупреждение, что папка не инициализирована CLI.
+Match checking: `freeagent init` writes the `project_id` (UUID) marker to the config. After selecting a folder, the extension reads the config and shows `project_id` and the label. If there is no config, a warning that the folder has not been initialized by the CLI.
 
 ### `known_instances`
-CLI ведёт список виденных инстансов с человекочитаемыми метками, которые задаёт пользователь («Chrome — основной», «Opera — второй Kimi»). Нужно, чтобы `instance_id`-UUID был читаем в выводе `freeagent agents`.
+The CLI maintains a list of visible instances with human-readable labels that are specified by the user (“Chrome is the main one,” “Opera is the second Kimi”). The `instance_id`-UUID needs to be readable in the output of `freeagent agents`.
 
 ## Constraints
-- Конфиг пишет CLI; расширение читает и может запросить изменение через сообщение
-- Значения по умолчанию работают без правки — конфиг опционален для старта
-- `context_threshold_pct` и `backoff_ms` **требуют калибровки на реальных сервисах** — значения по умолчанию являются начальным приближением
-- Неизвестные поля в конфиге сохраняются при перезаписи (forward compatibility)
+- Config writes CLI; the extension reads and can request the change via a message
+- Default values ​​work without editing - the config is optional to start
+- `context_threshold_pct` and `backoff_ms` **require calibration on real services** - default values ​​are an initial approximation
+- Unknown fields in the config are saved when overwritten (forward compatibility)
 
 ## Dependencies
 `spec_fs_folder_access`
 
 ## Tests
 ### Unit
-1. Отсутствующий конфиг → все значения по умолчанию, работа не блокируется
-2. Частичный конфиг → недостающие поля из умолчаний
-3. Неизвестное поле сохраняется при перезаписи
-4. `project_id` совпадает между CLI и расширением → связь подтверждена
-5. Папка без конфига, выбранная в расширении → предупреждение
+1. Missing config → all default values, work is not blocked
+2. Partial config → missing fields from defaults
+3. Unknown field is retained when overwritten
+4. `project_id` matches between CLI and extension → connection confirmed
+5. Folder without config selected in extension → warning
 
 ### Integration check
-`freeagent init` в новой папке → выбрать её в расширении → обе стороны показывают один `project_id`
+`freeagent init` in the new folder → select it in the extension → both sides show the same `project_id`
 
 ### Definition of done
-- Тесты зелёные
-- Прогон integration check'ов предыдущих PR
+- Tests are green
+- Running integration checks of previous PRs

@@ -1,77 +1,75 @@
-# Spec: cli_init
+# Spec: cli init
 # Version: 1.0
-# Читать вместе с ARCHITECTURE.md (§15 инициализация), spec_config, spec_fs_folder_access
+# Read with ARCHITECTURE.md (§15 initialization), spec config, spec fs folder access
 
-## Goal
-`freeagent init` — первая команда пользователя. Создаёт служебную структуру, настраивает git, копирует встроенные скиллы, генерирует конфиг. После этого проект готов к подключению расширения.
+#Goal
+`freeagent init` is the first user command. Creates a service structure, configures git, copies built-in skills, generates a config. After that, the project is ready to connect the expansion.
 
-## Input
-- текущая рабочая директория (корень проекта)
-- опциональные флаги: `--no-git` (пропустить git-чек), `--force` (перезаписать существующую структуру)
+#Input
+Current working directory (root of the project)
+Optional flags: `--no-git` (skip the git check), `--force` (rewrite the existing structure)
 
-## Output
-- `/freeagent/` со всей структурой из `spec_fs_folder_access`
-- `freeagent.config.json` с `project_id` и умолчаниями
-- `/freeagent/skills/` с 5 встроенными скиллами: `orchestrator.md`, `coder.md`, `tester.md`, `researcher.md`, `reviewer.md`
-- `.gitignore` дополнен строкой `/freeagent/` (если git есть)
-- `.freeagentignore` с дефолтными правилами (из `spec_context_privacy_filter`)
+#Output
+- `/freeagent/` with the entire structure of `spec_fs_folder_access`
+`freeagent.config.json` with `project_id` and silences
+- `/freeagent/skills/` with 5 built-in skills: `orchestrator.md`, `coder.md`, `tester.md`, `researcher.md`, `reviewer.md`
+`.gitignore` is supplemented with the `/freeagent/` string (if git is available)
+`.freeagentignore` with default rules (from `spec_context_privacy_filter`)
 
-## Contract
+#Contract #
 
-### Процедура
+### Procedure
 ```
-1. Проверить: нет ли уже /freeagent/
-     есть, без --force → сообщение «уже инициализирован, используй --force»
-     есть, с --force → продолжить (перезапись конфига, скиллы НЕ перезаписываются)
+1. Check.: Don't you? /freeagent/
+     eat, without --force → message «already initialized, use --force»
+     eat, on --force → continue (configuration, skill)
 
-2. Проверить git:
-     git init уже сделан → ок
-     нет git → предложить «git init?» интерактивно
-       да → git init
-       нет (или --no-git) → warning «чекпоинты отключены» в каждой сессии
+2. Check. git:
+     git init done → ok
+     no git → propose «git init?» interactively
+       yes → git init
+       no (or --no-git) → warning «checkpoints disabled» at each session
 
-3. Создать /freeagent/ и всю структуру (идемпотентно)
+3. Create /freeagent/ whole structure (idempotently)
 
-4. Сгенерировать freeagent.config.json:
+4. Generate freeagent.config.json:
      project_id: UUID
-     все поля по умолчанию (из spec_config)
+     default (from spec_config)
 
-5. Скопировать встроенные скиллы в /freeagent/skills/
-     только если файла с таким именем ещё нет (не перезаписывать пользовательские правки)
+5. Copy built-in skills in /freeagent/skills/
+     unless there is a file with that name. (Do not overwrite user edits)
 
-6. Создать .freeagentignore с дефолтами (только если не существует)
+6. Create .freeagentignore defaulted (unless there is)
 
-7. Добавить /freeagent/ в .gitignore (если git, и строки ещё нет)
+7. Add /freeagent/ into .gitignore (if git, And the line's gone.)
 
-8. Вывести:
-     ✓ Проект инициализирован
-     project_id: <uuid> (покажите его в расширении для связывания)
-     Следующий шаг: установите расширение и выберите эту папку
-```
-
-## Constraints
-- Идемпотентность: повторный `init` без `--force` не ломает существующее — только сообщает
-- С `--force`: конфиг и структура пересоздаются, но `skills/*.md` и `.freeagentignore` не перезаписываются (пользовательские правки сохранены)
-- Встроенные скиллы лежат в `/cli/templates/skills/` в npm-пакете, копируются при init
-- Не модифицировать файлы проекта кроме `.gitignore` (одна строка) и создания `/freeagent/`
-- Работает без расширения — CLI и расширение связываются позже через `project_id`
+8. Get out.:
+     ✓ Project initialized
+     project_id: <uuid> (Show it in the extension for binding)
+     Next step.: Set the extension and select this folder.
+```##Constraints
+Idempotence: Repeated `init` without `--force` does not break the existing - only reports
+`--force`: Config and structure recreated, but `skills/*.md` and `.freeagentignore` are not overwritten (user edits saved)
+Built-in skills lie in `/cli/templates/skills/` in npm-package, copied when init
+Do not modify project files other than `.gitignore` (one line) and create `/freeagent/`
+- Works without extension - CLI and extension are later linked via `project_id`
 
 ## Dependencies
-`spec_config` (полная). Мягкие (кода из будущих PR не требуют, `cli_init` реализуется автономно в PR-3): `spec_git_checkpoints` — нужен только `git` в PATH для `git init` и строки `/freeagent/` в `.gitignore`, не логика чекпоинтов; `spec_skills_system` — встроенные скиллы копируются как файлы-шаблоны из `/cli/templates/skills/`, парсер и валидация ролей не нужны (появляются в PR-5).
+`spec_config` (complete) Soft (code from future PR does not require, `cli_init` is implemented autonomously in PR-3): `spec_git_checkpoints` - only `git` is needed in PATH for `git init` and `/freeagent/` strings in `.gitignore`, not the logic of checkpoints; `spec_skills_system` - built-in skills are copied as ZXPLAZ files from ZXLQPLACEX17.
 
 ## Tests
-### Unit
-1. Чистая папка → полная структура, конфиг с UUID, 5 скиллов, `.freeagentignore`
-2. Повторный `init` без `--force` → сообщение, ничего не тронуто
-3. `--force` → конфиг пересоздан с новым `project_id`, скиллы нетронуты
-4. Без git, без `--no-git` → интерактивный вопрос; с `--no-git` → warning, продолжение
-5. `.gitignore` уже содержит `/freeagent/` → строка не дублируется
-6. Существующий `coder.md` в skills → не перезаписан, новые скиллы докопированы
+#
+1. Clean folder → full structure, config with UUID, 5 Skills, `.freeagentignore`
+2. Repeated `init` without `--force` → message, nothing touched
+3. `--force` → Config recreated with the new `project_id`, skills intact
+4. Without git, without `--no-git` → interactive question; with `--no-git` → warning, sequel
+5. `.gitignore` already contains `/freeagent/`
+6. Existing `coder.md` in Skills → Unrecorded, New Skills Completed
 
-### Integration check
-`freeagent init` в пустой папке → расширение выбирает ту же папку → `project_id` совпадает → `freeagent start` → TUI показывает «0 агентов, готов к работе»
+###Integration check
+`freeagent init` in an empty folder → expander selects the same folder → `project_id` matches → `freeagent start` → TUI shows “0 agents, ready to go”
 
-### Definition of done
-- Тесты зелёные
-- Пользователь может начать работу с нуля за 2 команды: `freeagent init` + установить расширение
-- Прогон integration check'ов предыдущих PR
+##Definition of done
+- The tests are green.
+The user can start from scratch in 2 commands: `freeagent init` + install extension
+Run integration checks of previous PR

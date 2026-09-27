@@ -1,12 +1,12 @@
-// Общий контракт чтения шины — один интерфейс, две реализации: NodeFsSource (cli, PR-1),
-// FsaSource (extension, PR-2). BusReader строится поверх BusFileSource и не знает, откуда
-// приходит содержимое файла (ARCHITECTURE §4, spec_message_bus_read).
+// General bus reading contract - one interface, two implementations: NodeFsSource (cli, PR-1),
+// FsaSource (extension, PR-2). BusReader is built on top of BusFileSource and doesn't know where from
+// file contents arrive (ARCHITECTURE §4, spec_message_bus_read).
 
 export interface BusLine {
   text: string;
-  position: number; // индекс в строке файла — годится для incoming/commands (spec_bus_rotation:
-  // они не ротируются, incoming truncate'ится вместо ротации). Курсор ГЛАВНОЙ шины ротацию не
-  // переживает по позиции — mainLoop.ts читает её по seq напрямую, минуя этот интерфейс.
+  position: number; // index in the file line - good for incoming/commands (spec_bus_rotation:
+  // they are not rotated, incoming truncate is used instead of rotation). The MAIN bus cursor is not rotated
+  // experiences by position - mainLoop.ts reads it by seq directly, bypassing this interface.
 }
 
 export interface Batch {
@@ -24,7 +24,7 @@ export function makeBatchFromContent(content: string): Batch {
       let pos = cursor;
       while (true) {
         const newlineIdx = content.indexOf('\n', pos);
-        if (newlineIdx === -1) break; // хвост без \n — запись ещё идёт, не парсить
+        if (newlineIdx === -1) break; // tail without \n - recording is still in progress, do not parse
         const text = content.slice(pos, newlineIdx);
         pos = newlineIdx + 1;
         if (text.length > 0) result.push({ text, position: pos });

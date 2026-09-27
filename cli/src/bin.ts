@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// `freeagent` — каркас CLI (spec_cli). Команды: init, start, do, agents, log.
+// `freeagent` - CLI framework (spec_cli). Commands: init, start, do, agents, log.
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { readFile, unlink, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import readline from 'node:readline';
 import { render } from 'ink';
@@ -16,11 +16,12 @@ import { buildTabStateRequests, reconcileFromResponses } from './cli/reconcile.t
 import { acquireSessionLock, SessionAlreadyRunning } from './cli/singleSession.ts';
 import { agentsStatus, recentLog } from './cli/status.ts';
 import { runReplCommand } from './cli/replCommands.ts';
-import { IDLE_GATE, approvePlan, cancelPlan, revisePlan, planToEditableText } from './cli/planMode.ts';
+import { IDLE_GATE, approvePlan, cancelPlan, revisePlan, planToEditableText, switchMode } from './cli/planMode.ts';
 import { startExecution, stopExecution } from './cli/planExecution.ts';
 import { loadCheckpoints, undoCheckpoint, undoOutcomeNotify } from './cli/gitCheckpoints.ts';
 import { App } from './tui/App.ts';
-import type { BusMessage } from '../../shared/bus-types/index.ts';
+import { parseBusLine, type BusMessage } from '../../shared/bus-types/index.ts';
+import { loadMainCursor, saveMainCursor } from './cli/mainCursor.ts';
 
 const h = React.createElement;
 
@@ -38,13 +39,13 @@ async function cmdInit(projectRoot: string, args: string[]): Promise<void> {
   rl.close();
 
   if (result.alreadyInitialized) {
-    console.log('Проект уже инициализирован — используй --force для пересоздания конфига.');
+    console.log('The project has already been initialized - use --force to recreate the config.');
     return;
   }
-  console.log('✓ Проект инициализирован');
-  console.log(`project_id: ${result.projectId} (покажите его в расширении для связывания)`);
-  if (result.checkpointsDisabledWarning) console.warn('warning: git-чекпоинты отключены в этой сессии');
-  console.log('Следующий шаг: установите расширение и выберите папку /freeagent');
+  console.log('✓ Project initialized');
+  console.log(`project_id: ${result.projectId} (use this value to identify the project)`);
+  if (result.checkpointsDisabledWarning) console.warn('warning: git checkpoints are disabled in this session');
+  console.log('Next step: load the extension and select this project root');
 }
 
 async function cmdStart(projectRoot: string): Promise<void> {
@@ -61,31 +62,40 @@ async function cmdStart(projectRoot: string): Promise<void> {
   let registry = await loadRegistry(freeagentDir);
   const writer = await BusWriter.create(join(freeagentDir, 'message_bus.jsonl'));
 
-  // Реестр после рестарта не считается достоверным — сверка через TAB_STATE (ARCHITECTURE §2).
+  // The register is not considered reliable after a restart - reconciliation via TAB_STATE (ARCHITECTURE §2).
   const tabStateRequests = buildTabStateRequests(registry);
   if (tabStateRequests.length > 0) {
     await appendCommands(freeagentDir, tabStateRequests);
   }
-  registry = reconcileFromResponses(registry, {}); // ответы приходят через обычный цикл ниже; на старте — консервативно
+  registry = reconcileFromResponses(registry, {}); //responses come through the normal loop below; at the start - conservatively
   await saveRegistry(freeagentDir, registry);
 
-  const state: MainLoopState = { registry, buffered: {}, cursor: 0 };
-  const messages: BusMessage[] = [];
+  const busPath = join(freeagentDir, 'message_bus.jsonl');
+  const state: MainLoopState = { registry, buffered: {}, cursor: await loadMainCursor(freeagentDir) };
+  const messages: BusMessage[] = (await readFile(busPath, 'utf8').catch(() => ''))
+    .split('\n')
+    .filter(Boolean)
+    .map(parseBusLine)
+    .filter((result): result is { ok: true; msg: BusMessage } => result.ok)
+    .map((result) => result.msg);
 
   process.on('exit', () => void lock.release());
   process.on('SIGINT', () => process.exit(0));
 
   const tick = async (): Promise<void> => {
-    const { commands } = await runMainLoopOnce(freeagentDir, writer, state);
+    const { commands, processed } = await runMainLoopOnce(freeagentDir, writer, state);
+    messages.push(...processed);
+    if (messages.length > 1000) messages.splice(0, messages.length - 1000);
     if (commands.length > 0) await appendCommands(freeagentDir, commands);
     await saveRegistry(freeagentDir, state.registry);
+    await saveMainCursor(freeagentDir, state.cursor);
   };
   setInterval(() => void tick(), 2000);
   await tick();
 
-  // Правка плана: markdown в $EDITOR, отредактированное -> PLAN_REVISED (spec_cli_plan_mode).
-  // Реальный spawn/temp-файл живёт здесь (composition root), planMode.ts/App.ts остаются чистыми
-  // и тестируемыми без живого терминала.
+  // Editing the plan: markdown in $EDITOR, edited -> PLAN_REVISED (spec_cli_plan_mode).
+  // The real spawn/temp file lives here (composition root), planMode.ts/App.ts remain clean
+  // and tested without a live terminal.
   const editPlanInEditor = async (): Promise<void> => {
     if (!state.gate?.plan) return;
     const editorCmd = process.env.EDITOR || process.env.VISUAL || (process.platform === 'win32' ? 'notepad' : 'vi');
@@ -102,7 +112,7 @@ async function cmdStart(projectRoot: string): Promise<void> {
       state.execution = startExecution(outcome.gate.plan!);
       await writer.mergeOnce([JSON.stringify(outcome.toOrchestrator)]);
     }
-    // невалидная правка: гейт остаётся plan_ready, план не тронут — можно попробовать [e] снова
+    // invalid edit: the gate remains plan_ready, the plan is not touched - you can try [e] again
   };
 
   render(
@@ -123,6 +133,7 @@ async function cmdStart(projectRoot: string): Promise<void> {
       onResult: async (result) => {
         if (result.configPatch) {
           Object.assign(config, result.configPatch);
+          if (result.configPatch.mode) state.gate = switchMode(state.gate ?? IDLE_GATE, result.configPatch.mode);
           await saveConfig(freeagentDir, config);
         }
         if (result.toOrchestrator) {
@@ -132,8 +143,8 @@ async function cmdStart(projectRoot: string): Promise<void> {
           state.execution = stopExecution(state.execution);
         }
         if (result.undoRequest) {
-          // /undo — реальная I/O (git revert), поэтому исполняется здесь, не в runReplCommand
-          // (spec_git_checkpoints задача B.12). Исход виден через /log (undoOutcomeNotify).
+          // /undo is real I/O (git revert), so it is executed here, not in runReplCommand
+          // (spec_git_checkpoints task B.12). The outcome is visible via /log (undoOutcomeNotify).
           const entries = await loadCheckpoints(freeagentDir);
           const target = result.undoRequest.taskId
             ? entries.find((e) => e.task_id === result.undoRequest!.taskId)
@@ -155,13 +166,16 @@ async function cmdStart(projectRoot: string): Promise<void> {
 
 async function cmdDo(projectRoot: string, taskText: string): Promise<void> {
   const freeagentDir = join(projectRoot, 'freeagent');
-  const writer = await BusWriter.create(join(freeagentDir, 'message_bus.jsonl'));
   const result = runReplCommand(`/btw ${taskText}`, {
     registry: {},
     messages: [],
     config: (await loadConfig(freeagentDir)).config,
   });
-  if (result.toOrchestrator) await writer.mergeOnce([JSON.stringify(result.toOrchestrator)]);
+  if (result.toOrchestrator) {
+    const incomingDir = join(freeagentDir, 'incoming');
+    await mkdir(incomingDir, { recursive: true });
+    await appendFile(join(incomingDir, 'cli_user.jsonl'), JSON.stringify(result.toOrchestrator) + '\n', 'utf8');
+  }
   console.log('sent to orchestrator');
 }
 

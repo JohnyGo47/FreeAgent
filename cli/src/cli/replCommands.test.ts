@@ -15,7 +15,7 @@ function ctx(): ReplContext {
   return { registry, messages, config: { ...DEFAULT_CONFIG } };
 }
 
-test('/status, /agents, /log, /files отвечают без единого сообщения оркестратору', () => {
+test('/status, /agents, /log, /files respond without a single message to the orchestrator', () => {
   for (const cmd of ['/status', '/agents', '/log', '/files']) {
     const result = runReplCommand(cmd, ctx());
     assert.equal(result.toOrchestrator, undefined, cmd);
@@ -23,36 +23,36 @@ test('/status, /agents, /log, /files отвечают без единого со
   }
 });
 
-test('/mode plan|yolo переключает режим в конфиге', () => {
+test('/mode plan|yolo switches the mode in the config', () => {
   const c = ctx();
   const result = runReplCommand('/mode yolo', c);
   assert.equal(result.configPatch?.mode, 'yolo');
 });
 
-test('/btw <текст> уходит оркестратору как TASK от user', () => {
-  const result = runReplCommand('/btw проверь логи', ctx());
+test('/btw <text> goes to the orchestrator as a TASK from the user', () => {
+  const result = runReplCommand('/btw check the logs', ctx());
   assert.equal(result.toOrchestrator?.from, 'user');
   assert.equal(result.toOrchestrator?.to, 'orchestrator');
 });
 
-// spec_plan_execution задача B.13: /stop снимает заглушку PR-3 (зависимость появилась — plan_execution
-// теперь существует). Сигнал уходит в bin.ts как stopExecution: true, а не как toOrchestrator —
-// это остановка исполнения плана внутри CLI, оркестратора она не касается.
-test('/stop сигнализирует остановку исполнения плана (новые задачи не уходят), не трогает оркестратора', () => {
+// spec_plan_execution task B.13: /stop removes the PR-3 stub (dependency appeared - plan_execution
+// now exists). The signal goes to bin.ts as stopExecution: true, and not as toOrchestrator -
+// this is stopping the execution of the plan inside the CLI, it does not affect the orchestrator.
+test('/stop signals the plan to stop execution (new tasks do not leave), does not touch the orchestrator', () => {
   const result = runReplCommand('/stop', ctx());
   assert.equal(result.stopExecution, true);
   assert.equal(result.toOrchestrator, undefined);
 });
 
-// spec_git_checkpoints задача B.12: /undo сигнализирует bin.ts (реальный git revert — I/O,
-// runReplCommand синхронна), не трогает оркестратора.
-test('/undo без аргумента: undoRequest без taskId — bin.ts откатывает последний чекпоинт', () => {
+// spec_git_checkpoints task B.12: /undo signals bin.ts (real git revert - I/O,
+// runReplCommand is synchronous), does not affect the orchestrator.
+test('/undo without argument: undoRequest without taskId - bin.ts rolls back the last checkpoint', () => {
   const result = runReplCommand('/undo', ctx());
   assert.deepEqual(result.undoRequest, { taskId: undefined });
   assert.equal(result.toOrchestrator, undefined);
 });
 
-test('/undo <task_id>: undoRequest.taskId несёт конкретную задачу', () => {
+test('/undo <task_id>: undoRequest.taskId carries a specific task', () => {
   const result = runReplCommand('/undo task-42', ctx());
   assert.deepEqual(result.undoRequest, { taskId: 'task-42' });
 });

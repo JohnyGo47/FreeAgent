@@ -2,7 +2,7 @@ import { open, unlink } from 'node:fs/promises';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// fs.open(path, 'wx') — атомарное эксклюзивное создание на уровне ОС (ARCHITECTURE §4, spec_message_bus_write)
+// fs.open(path, 'wx') - atomic exclusive creation at the OS level (ARCHITECTURE §4, spec_message_bus_write)
 export async function withLock(lockPath: string, fn: () => Promise<void>): Promise<void> {
   for (let attempt = 0; attempt < 30; attempt++) {
     let fd;

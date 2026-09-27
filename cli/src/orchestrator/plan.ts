@@ -1,5 +1,5 @@
-// Парсинг/валидация [PLAN] (spec_md_orchestrator). Формат намеренно текстовый, pipe-separated —
-// не JSON/YAML, бесплатные модели надёжнее генерируют его. Парсер живёт в CLI, как parseFsCall.
+// Parsing/validation [PLAN] (spec_md_orchestrator). The format is intentionally text-based, pipe-separated -
+// not JSON/YAML, free models generate it more reliably. The parser lives in the CLI, like parseFsCall.
 import type { PlanPayload, PlanStep } from '../../../shared/bus-types/index.ts';
 
 const PLAN_RE = /\[PLAN\]([\s\S]*?)\[\/PLAN\]/;
@@ -49,9 +49,9 @@ export function validatePlan(plan: PlanPayload, validAgentIds: string[]): Valida
     }
   }
 
-  // ARCHITECTURE §10: пересечение files между шагами — сигнал расписания (последовательное
-  // исполнение в plan_execution), не ошибка валидации. Роль-текст spec_md_orchestrator раньше
-  // требовал строже ("два шага не могут трогать один файл"); приведён к архитектуре в PR-8.
+  // ARCHITECTURE §10: intersection of files between steps - schedule signal (sequential
+  // execution in plan_execution), not a validation error. Role-text spec_md_orchestrator before
+  // required stricter (“two steps cannot touch the same file”); brought to the architecture in PR-8.
 
   const byId = new Map(plan.steps.map((s) => [s.step_id, s]));
   const state = new Map<number, 'visiting' | 'done'>();
@@ -79,8 +79,8 @@ export function validatePlan(plan: PlanPayload, validAgentIds: string[]): Valida
   return { ok: true };
 }
 
-// "План Б" — три попытки: 1-я и 2-я неудача парсинга → отправить оркестратору на переписывание,
-// 3-я → сдаться и показать сырой текст пользователю (spec_md_orchestrator "Парсинг плана").
+// "Plan B" - three attempts: 1st and 2nd parsing failure → send to orchestrator for rewriting,
+// 3rd → give up and show the raw text to the user (spec_md_orchestrator "Plan Parsing").
 export type PlanAttemptOutcome = 'RETRY' | 'SHOW_RAW_TO_USER';
 
 export function planRetryOutcome(failedAttemptNumber: number): PlanAttemptOutcome {
@@ -89,11 +89,11 @@ export function planRetryOutcome(failedAttemptNumber: number): PlanAttemptOutcom
 
 const PLAN_EXAMPLE = [
   '[PLAN]',
-  'STEP 1 | researcher1 | Найти лучшие практики JWT-авторизации | FILES: research/jwt.md | DEPENDS: none',
-  'STEP 2 | coder1 | Написать middleware авторизации | FILES: src/auth.ts, src/auth.test.ts | DEPENDS: 1',
+  'STEP 1 | researcher1 | Find JWT authorization best practices | FILES: research/jwt.md | DEPENDS: none',
+  'STEP 2 | coder1 | Write authorization middleware | FILES: src/auth.ts, src/auth.test.ts | DEPENDS: 1',
   '[/PLAN]',
 ].join('\n');
 
 export function buildPlanRetryMessage(): string {
-  return `Перепиши план строго по формату. Вот пример:\n${PLAN_EXAMPLE}`;
+  return `Rewrite the plan strictly according to the format. Here's an example:\n${PLAN_EXAMPLE}`;
 }

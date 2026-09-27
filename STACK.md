@@ -1,62 +1,48 @@
-# FreeAgent — Stack
-# Version: 2.0
-# Читать вместе с ARCHITECTURE.md
+# FreeAgent Stack
 
 ## CLI
-- **Runtime:** Node.js 20+
-- **Language:** TypeScript 5
-- **UI:** ink (React для терминала)
-- **File watching:** `fs.watch`
-- **Git:** через `child_process`, без libgit2-биндингов
-- **Таймеры:** обычный `setInterval` — процесс не спит, ограничений MV3 нет
 
-## Расширение
-- **Manifest:** V3
-- **Language:** TypeScript 5
-- **Bundler:** esbuild — 4 бандла (background, content, popup, offscreen)
-- **File System:** File System Access API, хэндл в IndexedDB
-- **File watching:** `FileSystemObserver` (Chrome/Edge) + polling fallback 2с
-- **Таймеры:** только `chrome.alarms` (минимум 1 мин). `setInterval` легален **исключительно в content script**
+- Runtime: Node.js 20+
+- Language: TypeScript 5
+- Terminal UI: Ink and React
+- Filesystem: Node.js standard library
+- Process execution: `child_process`
+- Git integration: the Git CLI, without a libgit2 dependency
 
-## Shared
-- **Package manager:** npm
-- **Monorepo:**
-```
-/freeagent
-  /cli          Node.js CLI
-  /extension    браузерное расширение
-  /shared       типы протокола, схема адаптера, шаблоны, конвертеры
-```
+The CLI is a normal long-running Node.js process, so it may use regular timers.
 
-## Файловая структура проекта пользователя
-```
-/freeagent/
-  message_bus.jsonl          главная шина, единственный writer — CLI
-  freeagent.config.json      настройки
-  agents_registry.json       реестр агентов, единственный writer — CLI
-  llm_adapter_registry.json  DOM-адаптеры
-  selector_overrides.json    локальные починки селекторов
-  checkpoints.json           маппинг task_id → commit hash
-  incoming/<instance_id>.jsonl   пишет offscreen этого инстанса
-  commands/<instance_id>.jsonl   пишет CLI, читает этот инстанс
-  cursors/<reader_id>.json
-  memory/<agent_id>.md
-  skills/*.md
-  logs/
+## Browser extension
+
+- Platform: Chrome/Chromium Manifest V3
+- Language: TypeScript 5
+- Bundler: esbuild
+- Bundles: background, content, popup, and offscreen
+- Directory access: File System Access API
+- Handle persistence: IndexedDB
+- File observation: polling, with optional `FileSystemObserver` support
+- Background scheduling: `chrome.alarms`
+
+Outside the content script, extension code must not depend on `setInterval`; the MV3 service worker may be suspended at any time.
+
+## Shared workspace
+
+- Package manager: npm workspaces
+- Test runner: Node.js built-in test runner
+- Packages: `shared`, `cli`, and `extension`
+
+```text
+cli/        trusted coordinator and filesystem boundary
+extension/  browser transport and UI automation
+shared/     protocol, adapter, and bus definitions
 ```
 
-## Браузеры
-| Браузер | FileSystemObserver | Статус |
-|---|---|---|
-| Chrome / Chromium ≥121 | ✅ | Полная поддержка |
-| Edge | ✅ | Полная поддержка |
-| Brave / Opera | ✅ | Полная поддержка |
-| Firefox | ❌ polling | С ограничениями |
-| Safari | ❌ polling | С ограничениями |
+## Supported target
 
-## Целевая платформа MVP
-Chrome + Node.js 20 на Windows / macOS / Linux
+The primary target is current Chrome on Windows, macOS, or Linux with Node.js 20+. Chromium-based browsers may work when they expose the required Manifest V3 and File System Access APIs. Firefox and Safari are not current beta targets.
 
-## Отвергнутые варианты
-- **Форк opencode или плагин к нему** — их агентный цикл построен на function calling, которого в браузерных чат-интерфейсах нет. Эмуляция тегами ломалась бы непредсказуемо на многошаговых циклах
-- **Gemini-сайдбар Chrome** — нативный UI браузера, не веб-страница: нет URL для `chrome.tabs.create`, нет document для content script
+## Deliberately avoided
+
+- API-key-based agent frameworks: FreeAgent is designed around browser chat sessions.
+- Native browser sidebars: content scripts require a normal web document and URL.
+- Additional persistence services: project-local files are sufficient for the beta.
+- Shell command passthrough: verification uses a small command allowlist.

@@ -1,67 +1,67 @@
 # Spec: backup_agents
-# Version: 1.0 — НОВАЯ
-# Читать вместе с ARCHITECTURE.md (§7 память и бэкапы)
+# Version: 1.0 - NEW
+# Read along with ARCHITECTURE.md (§7 memory and backups)
 
 ## Goal
-Горячий бэкап: пользователь заранее открывает и помечает запасную вкладку. При исчерпании контекста или лимита агент переезжает на неё вместе с памятью, сохраняя `agent_id`.
+Hot backup: the user opens and marks a spare tab in advance. When the context or limit is exhausted, the agent moves to it along with the memory, saving `agent_id`.
 
 ## Input
-- Пользователь: открытая вкладка с залогиненной моделью + «сделать бэкапом для `coder1`» в UI расширения
-- Сигнал переключения: `context_full` / `rate_limited` из `spec_response_health`
+- User: open tab with a logged-in model + “make a backup for `coder1`” in the extension UI
+- Toggle signal: `context_full` / `rate_limited` from `spec_response_health`
 
 ## Output
-- Запись бэкапа в `agents_registry.json`: `{ backup_for: 'coder1', instance_id, tab_id, llm_url, status: 'STANDBY' }`
-- После переключения: `coder1` указывает на бывшую бэкап-вкладку, `NOTIFY: AGENT_SWITCHED`
+- Recording a backup in `agents_registry.json`: `{ backup_for: 'coder1', instance_id, tab_id, llm_url, status: 'STANDBY' }`
+- After switching: `coder1` points to the former backup tab, `NOTIFY: AGENT_SWITCHED`
 
 ## Contract
 
-### Регистрация бэкапа
-Тот же флоу, что и обычного агента (`spec_init_agent`, флоу А), но с флагом `is_backup_for`. Роль инжектируется сразу — вкладка стоит инициализированной, статус `STANDBY`.
+### Registering a backup
+The same flow as a regular agent (`spec_init_agent`, flow A), but with the `is_backup_for` flag. The role is injected immediately - the tab is initialized, the status is `STANDBY`.
 
-### Процедура переключения
+### Switching procedure
 ```
-1. CLI: статус агента → SWITCHING, входящие задачи в очередь
-2. CLI → агенту: COMMAND: REQUEST_MEMORY с ПОЛНЫМ шаблоном MEMORY.md инлайном
-3. Агент отдаёт MEMORY.md → CLI сохраняет в /freeagent/memory/<agent_id>.md
-4. CLI → бэкап-инстансу: COMMAND: ACTIVATE_BACKUP + MEMORY.md
-5. Расширение инжектит MEMORY во вкладку бэкапа
-6. Бэкап отвечает READY
-7. Реестр: agent_id → новый instance_id/tab_id; старая вкладка помечена ушедшей
-8. Статус `IDLE`, очередь задач доставлена
+1. CLI: agent status → SWITCHING, incoming tasks to queue
+2. CLI → agent: COMMAND: REQUEST_MEMORY with FULL template MEMORY.md inline
+3. The agent gives MEMORY.md → CLI saves to /freeagent/memory/<agent_id>.md
+4. CLI → backup instance: COMMAND: ACTIVATE_BACKUP + MEMORY.md
+5. Extension injects MEMORY into the backup tab
+6. Backup responds READY
+7. Registry: agent_id → new instance_id/tab_id; the old tab is marked as gone
+8. Status `IDLE`, task queue delivered
 ```
 
-**Шаблон MEMORY отправляется инлайном, а не «напиши как в скилле»** — к этому моменту роль лежит в начале длинного треда, внимание модели к далёкому контексту деградирует (ARCHITECTURE §7).
+**The MEMORY template is sent inline, and not “write as in the skill”** - at this point the role lies at the beginning of a long thread, the model’s attention to the distant context degrades (ARCHITECTURE §7).
 
-### Проверка живости бэкапа
-Расширение периодически (`chrome.alarms`) проверяет, что бэкап-вкладка жива и на нужном домене. Это проверка состояния вкладки, **не сообщение модели** — контекст бэкапа не тратится. Протухла → `NOTIFY` пользователю перелогиниться.
+### Checking backup vitality
+The extension periodically (`chrome.alarms`) checks that the backup tab is alive and on the correct domain. This is a tab state check, **not a model message** - the backup context is not wasted. Rotten → `NOTIFY` user to re-login.
 
 ## Constraints
-- Бэкап может быть в любом инстансе, включая другой браузер/профиль — команда идёт в его `commands/<instance_id>.jsonl`
-- **Если браузер с бэкапом закрыт** — команда ждёт в файле, мгновенного переключения не будет (ARCHITECTURE §16.7)
-- Один бэкап на агента в MVP; цепочки бэкапов не поддерживаются
-- Бэкап без MEMORY.md (агент не успел отдать) — активируется с реконструкцией из шины: последний `TASK` + список записанных файлов
-- Оркестратор о переключении не уведомляется — `agent_id` сохранён
-- Если бэкапа нет, а сработал `context_full` — `NOTIFY` пользователю с предложением назначить бэкап; задачи в очереди
+- The backup can be in any instance, including another browser/profile - the command goes to its `commands/<instance_id>.jsonl`
+- **If the browser with the backup is closed** - the command is waiting in the file, there will be no instant switching (ARCHITECTURE §16.7)
+- One backup per agent in MVP; backup chains are not supported
+- Backup without MEMORY.md (the agent did not have time to give it) - activated with reconstruction from the bus: last `TASK` + list of recorded files
+- The orchestrator is not notified about the switch - `agent_id` is saved
+- If there is no backup, but `context_full` worked - `NOTIFY` to the user with a proposal to assign a backup; tasks in queue
 
 ## Dependencies
 `spec_init_agent`, `spec_md_memory_template`, `spec_message_bus_types`
 
-> Бэкап активируется по решению CLI, когда тот получает `RESPONSE_HEALTH` с классом `context_full`/`rate_limited`. Но `backup_agents` не зависит от `response_health` — она принимает команду на переключение, не зная, кто её инициировал.
+> The backup is activated by the decision of the CLI when it receives `RESPONSE_HEALTH` with the class `context_full`/`rate_limited`. But `backup_agents` does not depend on `response_health` - it accepts the switch command without knowing who initiated it.
 
 ## Tests
 ### Unit
-1. Регистрация бэкапа → статус `STANDBY`, роль инжектирована, задачи не приходят
-2. `context_full` → полная процедура переключения, `agent_id` неизменен
-3. Задачи во время `SWITCHING` буферизуются и доставляются после `READY`
-4. Бэкап без MEMORY.md активируется с реконструированным контекстом
-5. Закрытый браузер бэкапа → команда в файле, `NOTIFY`, без падения
-6. Отсутствие бэкапа при `context_full` → `NOTIFY`, очередь не теряется
-7. Оркестратор не получает сообщений о переключении
+1. Registering a backup → status `STANDBY`, role is injected, tasks do not arrive
+2. `context_full` → full switching procedure, `agent_id` unchanged
+3. Tasks during `SWITCHING` are buffered and delivered after `READY`
+4. Backup without MEMORY.md is activated with the reconstructed context
+5. Closed backup browser → command in file, `NOTIFY`, without crashing
+6. No backup with `context_full` → `NOTIFY`, the queue is not lost
+7. Orchestrator does not receive switch messages
 
 ### Integration check
-Назначить бэкап на другом профиле → искусственно понизить порог контекста → дождаться переключения → агент продолжает задачу с сохранённой памятью
+Assign a backup to another profile → artificially lower the context threshold → wait for the switch → the agent continues the task with the saved memory
 
 ### Definition of done
-- Тесты зелёные, integration check пройден на двух профилях браузера
-- Проверка живости бэкапа не отправляет сообщений модели
-- Прогон integration check'ов предыдущих PR
+- Tests are green, integration check passed on two browser profiles
+- Backup liveness check does not send messages to the model
+- Running integration checks of previous PRs

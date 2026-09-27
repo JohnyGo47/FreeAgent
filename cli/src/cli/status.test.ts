@@ -15,7 +15,7 @@ function msg(partial: Partial<BusMessage>): BusMessage {
 
 test('/status, /agents, /log, /files answer purely from given state — no message is produced', () => {
   const messages: BusMessage[] = [msg({})];
-  // Мех. функции — синхронные, чистые: возвращают данные, не отправляют сообщений оркестратору.
+  // Fur. functions are synchronous, pure: they return data and do not send messages to the orchestrator.
   assert.equal(typeof agentsStatus(registry), 'object');
   assert.equal(typeof statusSummary(registry, messages), 'object');
 });

@@ -1,11 +1,11 @@
-// fs.read (spec_file_access): чтение файла с byte-cap, path guard первым.
+// fs.read (spec_file_access): Read file with byte-cap, path guard first.
 import { readFile, stat } from 'node:fs/promises';
 import { relative } from 'node:path';
 import { resolveInRoot } from './pathGuard.ts';
 import { loadPrivacyMatcher, checkReadExclusion, maskSecrets } from './privacyFilter.ts';
 import { fsError, fsOk, type FsResult } from './types.ts';
 
-// Значение — заглушка PR-4 (Open items: калибруется на реальных прогонах).
+// Value is a PR-4 stub (Open items: calibrated on real runs).
 export const READ_BYTE_CAP = 200_000;
 
 export async function read(root: string, path: string): Promise<FsResult> {
@@ -14,7 +14,7 @@ export async function read(root: string, path: string): Promise<FsResult> {
 
   const relPath = relative(root, check.resolved).split('\\').join('/');
 
-  // Слой 1 (spec_context_privacy_filter): секретный файл не отдаётся агенту целиком, до чтения.
+  // Layer 1 (spec_context_privacy_filter): the secret file is not given to the agent in its entirety before reading.
   const privacyMatcher = await loadPrivacyMatcher(root);
   const exclusion = await checkReadExclusion(root, relPath, privacyMatcher);
   if (exclusion) {

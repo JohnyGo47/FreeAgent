@@ -1,504 +1,152 @@
-# FreeAgent — Architecture
-# Version: 1.1
-# Дата: 2026-08-02 (ревизия: ACTIVE убран, id в конверте, STATUS от CLI, seq-recovery)
+# FreeAgent Architecture
 
-> **Этот файл читается перед любой задачей.** Он содержит сквозные решения, которые касаются всех спек сразу. Отдельная спека — это контракт на один кирпич; этот файл — чертёж дома. Спека без него не реализуема.
->
-> **Если версия этого файла изменилась — начинай новую сессию.** Иначе в контексте останется отменённое решение.
+FreeAgent connects browser-based LLM conversations to a local coding workflow. The browser extension transports prompts and responses; the CLI owns coordination, filesystem access, verification, and durable state.
 
----
+The architecture deliberately treats an LLM response as untrusted input. Deterministic code decides what may be read or written, whether tests really passed, and when a plan step may start.
 
-## 0. Что это за проект
+## Design principles
 
-FreeAgent — open-source vibe-coding tool. Браузерное расширение подключает **бесплатные LLM в браузерных вкладках** как coding-агентов; CLI координирует их работу над проектом на диске пользователя.
+1. **Mechanical checks over model claims.** The CLI verifies files, test exit codes, dependencies, and checkpoints itself.
+2. **One writer per resource.** The extension writes only to its instance input queue; the CLI writes the main bus, command queues, registry, and project files.
+3. **Small messages, large data through files.** Agents report concise results and access project content through the FS protocol.
+4. **Explicit ownership.** A plan step declares its files, and writes outside that set are rejected while the step is active.
+5. **Recoverable failure states.** Closed tabs, broken selectors, revoked folder access, rate limits, and malformed responses have explicit handling paths.
+6. **The user owns the project.** Paths are confined to the selected root, sensitive files are filtered, and Git checkpoints make completed work reversible.
 
-Ключевое отличие от аналогов: не нужны API-ключи и оплата за токены. Плата за это — непредсказуемость: бесплатные веб-интерфейсы не поддерживают function calling, ломают форматирование, отваливаются по лимитам и падают вместе с серверами провайдера. **Вся архитектура — это компенсация этой непредсказуемости механическими средствами.**
+## Components
 
----
+### CLI
 
-## 1. Шесть принципов
+The Node.js CLI is the trusted coordinator. It:
 
-1. **ИИ думает, механизм работает как часы.** Всё, что можно сделать детерминированным кодом, делается кодом. LLM привлекается только там, где нужно суждение.
-2. **Механизм проверяет ИИ, не наоборот.** Заявление модели («готово», «осталось 30% контекста», «тесты прошли») — гипотеза, а не факт. Факт устанавливается измерением.
-3. **Один писатель на ресурс.** Любой файл имеет ровно один компонент, который в него пишет. Это устраняет race conditions по построению, а не блокировками.
-4. **Оркестратор маршрутизирует решения, файловая система переносит данные.** Через контекст оркестратора не должно течь ничего объёмного.
-5. **Деградация вместо падения.** Отвалившийся агент, лежащий сервис, сломанный селектор — ожидаемые состояния, у каждого есть путь восстановления.
-6. **Пользователь владеет своим проектом.** Ничего не пишется на диск без чекпоинта, ничего не отправляется в сеть без ведома, любой шаг откатывается.
+- initializes project-local runtime state;
+- merges extension input queues into the main message bus;
+- assigns stable agent IDs and tracks lifecycle state;
+- parses and approves execution plans;
+- dispatches ready steps when dependencies and file ownership allow them;
+- executes FS requests inside the project root;
+- runs allowlisted verification commands and checks real exit codes;
+- creates Git checkpoints and supports task-level undo; and
+- exposes status, log, agent, mode, stop, and undo commands.
 
----
+Only the CLI writes user project files.
 
-## 2. Компоненты и ответственность
+### Browser extension
 
-Три компонента. Границы жёсткие — нарушение границы это архитектурная ошибка, а не оптимизация.
+The Manifest V3 extension has four bundles:
 
-### Расширение — глаза и руки
-Умеет ровно четыре вещи:
-- вставить текст во вкладку LLM
-- вычитать ответ из DOM
-- проверить, что вкладка жива и на нужном домене
-- посчитать символы в треде
+- **background service worker** — extension lifecycle, tab observation, content-script recovery, and offscreen startup;
+- **offscreen document** — durable access to the selected project directory and polling of command queues;
+- **content script** — DOM adapter selection, prompt injection, submission, response detection, and protocol extraction;
+- **popup** — directory selection, permission restoration, role selection, and tab registration.
 
-**Не знает**, что такое задача, план, роль, спека. **Не принимает решений.**
+The extension does not directly modify source files. It transports structured messages between the browser conversation and the project-local runtime directory.
 
-### CLI — механика и координация
-- владеет реестром агентов (`agents_registry.json`)
-- маршрутизирует сообщения между агентами по `agent_id`
-- **пишет файлы на диск** (агенты этого не делают никогда)
-- запускает тесты, делает git-чекпоинты
-- исполняет утверждённый план
-- держит очереди задач для недоступных агентов
-- отвечает пользователю на вопросы о состоянии
+### Shared package
 
-### Оркестратор — суждение
-LLM во вкладке, обычный агент с ролью `orchestrator`. Решает: как разбить задачу, кому что поручить, что делать при провале.
+`shared/` contains message types, tag-format conversion, adapter schemas, the default adapter registry, bus abstractions, and memory validation used by both the CLI and extension.
 
-**Не знает** про браузеры, вкладки, модели, инстансы, бэкапы. Для него существуют только `agent_id`.
+## Runtime directory
 
-> ⚠️ **Supervisor ≠ Orchestrator.** Supervisor — это механический код внутри CLI и расширения (наблюдение, таймеры, восстановление). Orchestrator — это LLM. Ранние версии спек их путали; любое упоминание «оркестратор делает setInterval» — ошибка.
+Initializing a target project creates `freeagent/` in that project:
 
----
-
-## 3. Топология и потоки
-
-### Звезда, а не сетка
-Все решения идут через оркестратора. Агенты не общаются напрямую.
-
-Причина: при N агентах сетка даёт N² путей, каждый агент должен знать про всех. Слабые модели этого не вывозят.
-
-**Но данные ходят мимо оркестратора.** Ресёрчер пишет результат в файл → оркестратор говорит кодеру «прочитай `research.md`» → содержимое исследования никогда не попадает в контекст оркестратора.
-
-### Путь одного сообщения
-```
-Оркестратор пишет в своём чате:
-  [MSG | to: coder1 | type: TASK] Реализуй эндпоинт логина [/MSG]
-
-1. content script вкладки оркестратора видит новый текст в DOM
-2. → offscreen document → пишет JSON в incoming/<instance оркестратора>.jsonl
-3. CLI мержит, видит to: coder1
-4. CLI ищет в agents_registry: coder1 → instance X, вкладка 42
-5. CLI пишет команду в commands/<instance X>.jsonl
-6. расширение инстанса X вставляет текст во вкладку 42
+```text
+freeagent/
+  freeagent.config.json
+  agents_registry.json
+  llm_adapter_registry.json
+  selector_overrides.json
+  message_bus.jsonl
+  checkpoints.json
+  incoming/<instance_id>.jsonl
+  commands/<instance_id>.jsonl
+  cursors/<reader_id>.json
+  memory/<agent_id>.md
+  skills/*.md
+  logs/
 ```
 
-Вся «интеллектуальность» шага 4 — поиск строки в JSON. Когда coder1 переезжает на бэкап, меняется одна запись в реестре; шаги 1–3 и 5–6 идентичны.
+This directory is operational state and is excluded from Git. Every initialized project has a unique `project_id`; the extension and CLI must point to the same project root.
 
-**Аналогия:** оркестратор пишет письмо на имя, CLI — почта со справочником адресов, расширение — курьер. Переезд получателя меняет справочник, а не способ писать письма.
+## Message flow
 
-### Валидация адресата
-Если оркестратор напишет `to: coder5`, которого нет — CLI ловит и возвращает `ERROR` со списком доступных `agent_id`. Без этой проверки слабая модель будет слать в пустоту.
+1. A browser agent emits a protocol block.
+2. The content script extracts the block and sends it to the offscreen document.
+3. The offscreen writer appends it to `freeagent/incoming/<instance_id>.jsonl`.
+4. The CLI merges incoming records into `message_bus.jsonl`, assigning monotonic sequence numbers and deduplicating by message ID.
+5. The router handles the message or appends a command to the destination instance queue.
+6. The offscreen document observes that queue and asks the registered content script to inject the command.
+7. Each consumer advances its cursor only after successful processing, providing at-least-once delivery.
 
----
+The main bus may rotate when it exceeds the configured threshold. Rotation retains the larger of the recent time window or the last 1,000 messages and preserves unfinished task/result pairs.
 
-## 4. Шина сообщений
+## Protocol
 
-### Два уровня
-```
-incoming/<instance_id>.jsonl    ← пишет ТОЛЬКО offscreen этого инстанса
-commands/<instance_id>.jsonl    ← пишет ТОЛЬКО CLI, читает этот инстанс
-message_bus.jsonl               ← пишет ТОЛЬКО CLI (мерж из всех incoming)
-```
+Normal messages use tagged blocks:
 
-**Почему не файл на агента.** Content script видит DOM, но FSA-хэндл лежит в IndexedDB расширения — у content script к нему доступа нет (изолированный мир). Реальная цепочка: `content script → runtime.sendMessage → offscreen (владеет FSA) → файл`. Значит **писатель физически один на инстанс**, независимо от числа агентов. Файлы по агентам защищали бы от конфликта, которого не бывает, и создавали проблему курицы-яйца (`agent_id` до регистрации не существует).
-
-### instance_id
-UUID, генерируется расширением при установке, лежит в `chrome.storage.local`. **Одна установка расширения в одном профиле браузера.**
-
-`chrome.storage.local` — per-profile. Поэтому пять аккаунтов Kimi = пять профилей = пять инстансов автоматически. Chrome с тремя профилями — это один браузер, но три инстанса.
-
-Существует **до появления любых агентов** — поэтому регистрация агента это обычное сообщение `REGISTER_REQUEST` в тот же канал, без спецслучаев.
-
-### Формат — строго JSON Lines
-Одна строка = один самостоятельный JSON-объект.
-
-```json
-{"id":"9f2c1e7a","seq":42,"from":"coder1","to":"orchestrator","type":"RESULT","ts":"2026-08-02T14:04:22Z","payload":{...}}
+```text
+[MSG | from: coder1 | to: orchestrator | type: RESULT]
+{"task_id":"example","status":"DONE","summary":{"result":"Implemented the requested change"}}
+[/MSG]
 ```
 
-Тег-формат `[MSG | ... ][/MSG]` — **только слой перевода**: текст, печатаемый в чат LLM и парсимый из его ответа. Внутри `.jsonl` файлов тегов не бывает никогда.
+Project access uses separate FS calls so the CLI can authorize and execute them:
 
-### Lock
-Нужен только CLI при мерже (defense-in-depth на случай двух CLI-процессов): `fs.open(path, 'wx')` — атомарное эксклюзивное создание на уровне ОС, retry 50ms × 10.
-
-У расширения файлового lock нет и не может быть — File System Access API не имеет такого примитива. Порядок внутри offscreen держит in-memory очередь промисов.
-
-### Курсоры
-- главная шина — по `seq` (переживёт ротацию файла)
-- incoming/commands — по номеру строки
-- курсор двигается **после** обработки (at-least-once; обработчики идемпотентны — дедуп по `id`/`seq`)
-- битая строка: пропустить, залогировать, курсор вперёд — не застревать на мусоре
-
----
-
-## 5. Правило MV3 (критично)
-
-Service worker расширения **останавливается Chrome примерно через 30 секунд простоя.**
-
-Запрещено:
-- `setInterval` / долгий `setTimeout` в service worker
-- состояние в переменных модуля SW
-- предполагать, что обработчик продолжит выполняться
-
-Обязательно:
-- таймеры → `chrome.alarms` (практический минимум периода — 1 минута)
-- состояние → `chrome.storage.session` / IndexedDB
-- каждый обработчик умеет начать с холодного старта
-- долгие FSA-операции и watch-циклы → offscreen document
-
-**Alarm — страховка холодного старта, не основной путь доставки.** Offscreen-документ держит `FileSystemObserver` на `commands/` и реагирует мгновенно, пока жив. Если offscreen уснул — значит активной работы нет (нет watch-циклов, нет открытых агентов). Alarm разбудит его, когда CLI положит новую команду. В активной сессии задержки на alarm нет.
-
-`setInterval` легален **только в content script** (это контекст страницы, он живёт пока жива вкладка). CI-проверка: grep на `setInterval` вне `src/content/`.
-
-**Все длительные таймеры — в CLI.** Node.js-процесс не спит и не убивается ОС.
-
----
-
-## 6. Наблюдение за агентами
-
-### Heartbeat от LLM не существует
-Изначально предполагался `HEARTBEAT` от агента. Это **невозможно**: LLM во вкладке говорит только когда его спросили, сам периодические сообщения не шлёт. Здоровый агент, ждущий задачу, молчит — и был бы признан мёртвым.
-
-### Наблюдаем напрямую
-`chrome.tabs.get(tabId)` даёт ответ сразу: вкладка жива, на нужном домене, селекторы резолвятся. Расширение шлёт `TAB_STATE` при изменении — **реактивно, а не по таймауту**.
-
-### Единственный оставшийся heartbeat
-**Расширение → CLI**, один на инстанс, по `chrome.alarms`. Нужен, чтобы CLI знал: браузер жив, наблюдение работает. Если браузер закрыт — наблюдать некому, и это надо заметить.
-
-### Контекст измеряется скрейпингом
-Расширение считает символы всего треда в DOM, делит на `context_window` из registry.
-
-> ⚠️ Это **грубая оценка, а не измерение.** Коэффициент ~4 символа на токен врёт для не-латиницы (Kimi/Qwen часто на смешанных языках). Реальные 60% могут оказаться 45% или 80%. Порог калибруется опытом, по умолчанию **60%**, настраивается per-adapter.
-
-**Модели не умеют оценивать свой контекст.** Спросишь «сколько осталось» — получишь выдуманное число. Мы этого и не спрашиваем: измеряем снаружи, а от модели требуем только суммаризацию (то, что LLM делают хорошо).
-
-### Классификация нездорового ответа
-Ответ пришёл, но это не рабочий ответ. Ловится `failure_patterns` из registry + эвристика:
-
-| Класс | Признак | Реакция |
-|---|---|---|
-| `unavailable` | паттерн «сервис недоступен» | backoff 30/60/120с в той же вкладке |
-| `rate_limited` | паттерн «лимит исчерпан» | переключение на бэкап |
-| `context_full` | паттерн переполнения / порог счётчика | переключение на бэкап |
-| `no_tags` | ответ есть, валидных тегов нет | переспросить с уточнением формата |
-
-Эвристика-фолбэк (когда паттерна ещё нет в registry): ответ короче ~200 символов **и** `fromTagFormat` вернул пусто. Один раз — не триггер, два подряд — триггер.
-
-**Детект — в расширении** (оно видит DOM). **Таймеры и решения — в CLI** (правило MV3).
-
----
-
-## 7. Память и бэкапы
-
-### MEMORY.md пишется постоянно
-После **каждой завершённой задачи**, а не по достижении порога.
-
-Причина: счётчик контекста неточен. Если ждать 60% и только тогда просить summary — при промахе модель упрётся в стену посреди генерации памяти, и контекст потерян целиком. При постоянном обновлении свежий снимок есть всегда, а порог означает «пора переключаться», а не «спасайся».
-
-Для оркестратора критично вдвойне — его MEMORY.md и есть контекст проекта.
-
-### Горячий бэкап (v1)
-Пользователь заранее открывает вкладку с запасной моделью, логинится и через расширение помечает её бэкапом для конкретного агента. Вкладка стоит инициализированная.
-
-**Почему не холодный.** В холодном пользователь должен указать в конфиге инстанс/аккаунт/сервис. Но `instance_id` — UUID, сгенерированный расширением; человек физически не может знать, что «мой Chrome со вторым аккаунтом Kimi» это `browser_d4e5f6`. Конфиг, который невозможно заполнить руками. В горячем идентификация происходит **самим действием** и не может быть указана неверно.
-
-Смена аккаунтов всегда требует человека (пароли, подтверждения) — участие пользователя здесь не ограничение, а единственный честный путь.
-
-Расширение периодически проверяет, что бэкап-вкладка жива и на нужном домене (проверка состояния, не сообщение модели — контекст не тратится). Протухла — сигнал пользователю перелогиниться.
-
-### Переключение
-1. Порог контекста / `rate_limited` → CLI решает переключить
-2. CLI шлёт агенту команду с **полным шаблоном MEMORY.md инлайном** (не «напиши как в скилле»)
-3. Агент отдаёт MEMORY.md → CLI сохраняет
-4. CLI активирует бэкап-вкладку, инжектит роль + MEMORY.md
-5. Реестр: тот же `agent_id`, новый instance/tab
-6. Оркестратор ничего не замечает
-
-**Почему шаблон инлайном.** К моменту порога роль лежит в самом начале длинного треда, а внимание модели к далёкому контексту деградирует — это и есть причина переключения. Инлайновый шаблон оказывается последним в контексте, в зоне максимального внимания, и детерминирован. Цена 300–400 токенов у модели, которая всё равно уходит. В скилле протокол памяти тоже упомянут — дублирование дешёвое и страхует.
-
-### Очередь на время переезда
-Пока агент в переходном статусе (не `IDLE`/`WORKING`), **CLI держит адресованные ему задачи в очереди** и доставляет после READY. План при этом не останавливается — останавливается только ветка, зависящая от этого агента.
-
----
-
-## 8. Разгрузка оркестратора
-
-Оркестратор — самое слабое звено: через него всё идёт, значит его контекст кончится первым. Архитектура гарантирует, что слабейший компонент сломается раньше всех — если специально не разгружать.
-
-### План как исполняемая программа
-После `/mode plan` есть утверждённый пользователем план. Оркестратор выдаёт его структурно (шаг → агент → файлы → зависит от шага N). **Дальше исполняет CLI**: шаг 1 → coder1, дождался RESULT → шаг 2 → tester1.
-
-Оркестратор просыпается только при: провале шага, неожиданном результате, окончании плана. На счастливом пути его не дёргают.
-
-### Сводки вместо сырья
-Агент отдаёт полный результат в CLI, CLI сохраняет на диск и отдаёт оркестратору строку «coder1 закончил, результат в `auth.ts`». Полный текст в контекст оркестратора не попадает никогда.
-
-### Дедупликация статусов
-Двадцать STATUS подряд с одинаковым состоянием — оркестратор не узнаёт ни об одном. Изменилось состояние — одна строка. Сам `STATUS` вычисляет CLI из тайминга TASK/RESULT (§12) — агент его не шлёт: модель по своей инициативе сообщений не отправляет.
-
-### Эскалация по исключениям
-Восстановление упавшего агента, переключение на бэкап, retry — CLI делает сам. Оркестратор узнаёт, только если после всех попыток агент не вернулся, то есть когда нужно решение о перераспределении.
-
-### Оркестратор не знает про бэкапы
-Бэкап принимает роль и `agent_id` упавшего. Каждое сообщение о падениях — сожжённый контекст на информацию, которая не влияет на его решения.
-
-### Ростер агентов
-Оркестратор получает список с однострочными описаниями из frontmatter скиллов:
-```
-coder1       [свободен]  пишет и правит код по спекам, TypeScript/Node
-researcher1  [работает]  ищет информацию в вебе, результат кладёт в файл
-seo_auditor1 [свободен]  аудит сайтов на техническое SEO, отчёт в audit.md
-```
-Обновляется при изменении состава. Полные MD ролей ему не нужны — он маршрутизирует, а не исполняет.
-
-> **Цена всего этого:** сложность переезжает в CLI. Он становится машиной состояний с планом, дедупликацией и правилами эскалации — больше кода и тестов. Но этот код детерминированный, отлаживаемый и не галлюцинирующий, в отличие от того, что мы с него снимаем.
-
----
-
-## 9. Верификация работы агентов
-
-### DONE — это гипотеза
-`RESULT: DONE` от бесплатной модели ничего не гарантирует. Модель уверенно скажет «готово», не написав ни строчки.
-
-### Протокол шага: тест → код → CLI запускает
-```
-1. агент пишет тест   → WRITE kind:test
-2. агент пишет код    → WRITE kind:code
-3. агент шлёт         → TESTS_READY { command: "npm test -- auth.test.ts" }
-4. CLI запускает      → exit 0 → шаг закрыт
-                      → exit ≠0 → эскалация оркестратору с текстом ошибки
+```text
+[FS | op: read | path: package.json]
 ```
 
-CLI не угадывает, что тест, а что код — агент **сам объявляет** это полем `kind`.
+Supported operations are `read`, `list`, `search`, `write`, and `edit`. Multiline writes use an explicit end marker. An agent must wait for `FS_RESULT` before continuing.
 
-**Запускает CLI, не агент.** Агент, проверяющий сам себя, — тот же экземпляр, который только что мог сгаллюцинировать.
+## Agent lifecycle
 
-### Безопасность запуска
-Тесты запускаются с таймаутом и **белым списком команд** (`npm test`, `pytest`, `go test`, …). Произвольная команда от агента — это шелл в руках слабой модели.
+The popup records a registration request with a role and browser tab. The CLI assigns the lowest available stable ID for that role, stores the registration, and sends an INIT prompt containing:
 
-### Признаки провала (без участия LLM)
-- явный `RESULT: FAILED`
-- тесты не проходят
-- заявлены файлы, которых нет на диске
-- нет результата дольше таймаута
-- самооценка ниже порога
+- the agent ID and role;
+- the role prompt from `freeagent/skills/`;
+- the canonical FreeAgent protocol; and
+- additional context such as the current roster for the orchestrator.
 
-### Самооценка — второй слой
-Промпт «жёстко оцени свою работу в процентах и опиши почему» — для того, что **не тестируется механически**: ресёрч, документация, ревью. Там это единственный доступный сигнал.
+The agent becomes `IDLE` after `[READY]`. Relevant states include `INITIALIZING`, `IDLE`, `WORKING`, `SWITCHING`, `STANDBY`, `BLOCKED`, `SERVICE_DOWN`, `SELECTOR_BROKEN`, `INIT_FAILED`, and `FAILED`.
 
-Ограничение: опрашивается тот же экземпляр, который мог ошибиться. Корреляция с реальностью есть, но слабая. На тестируемых задачах — вспомогательный сигнал, не основной.
+On CLI startup, reconciliation asks every registered tab for its current state. Closed or unreachable tabs move to a recoverable unavailable state instead of being silently treated as healthy.
 
-Применяется **только на завершении крупных шагов** — сам вопрос и ответ тратят контекст.
+## Plans and execution
 
-> ⚠️ **Известное ограничение.** Агент может написать тест, который проходит всегда (`expect(true).toBe(true)`). Механически это не отличить. Частичная мера: Tests описаны в спеке заранее, CLI сверяет имена тестов с перечисленными. Полной гарантии нет — тесты не абсолютный ground truth, а лучший доступный.
+In plan mode, the orchestrator responds to a user task with a structured plan:
 
----
-
-## 10. Параллелизм и владение файлами
-
-**Два агента, пишущие код в один проект параллельно, конфликтуют по смыслу**, а не только по файлам. Одинаковые имена функций — безобидный случай. Хуже: несовместимые типы, один рефакторит то, на что второй сослался.
-
-Автоматически это не решается. В командах людей это решают код-ревью и мердж-конфликты — человеком или очень сильной моделью. Слабые бесплатные LLM не вывезут.
-
-Значит решаем **не «как склеить», а «как не допустить склейки»**:
-
-1. **План назначает владельцев файлов.** Оркестратор указывает, какие файлы трогает каждый шаг.
-2. **Пересечение → последовательное исполнение.** Два параллельных шага заявили один файл — CLI не параллелит.
-3. **WRITE вне заявленных файлов отклоняется** с `ERROR`. Заодно защита от «заодно починю соседний модуль».
-
-> **Ограничение MVP:** параллельно работают только агенты с непересекающимися файлами. Ресёрчер + кодер — да. Два кодера по одному модулю — последовательно.
-
-Отсюда git-чекпоинты безопасны: коммит на каждый DONE захватывает только файлы своего шага, они у каждого свои.
-
-**Параллельная многоагентная разработка кода — нерешённая проблема даже с сильными моделями.** Ценность FreeAgent не в её решении, а в том, чтобы дать несколько моделей на разных ролях, где параллелизм естественный.
-
----
-
-## 11. Агенты не пишут на диск
-
-Агент может только прислать `WRITE` с путём и содержимым. **Файл записывает CLI.**
-
-Следствия:
-- CLI знает про каждый записанный файл, потому что он его и записал — спрашивать не у кого
-- путь валидируется против выхода из корня проекта (`../../.ssh/…`)
-- git-чекпоинт делается в момент записи, а не постфактум
-- privacy-фильтр применяется на чтении: `.env`, ключи, креды не уходят в промпт бесплатных сервисов
-
----
-
-## 12. Механическая правда против интерпретации
-
-CLI — единственный компонент, который видит всё, потому что через него идёт весь трафик. Это не дополнительная работа, а бесплатное следствие архитектуры:
-
-| Что CLI видит | Что из этого следует |
-|---|---|
-| отправил TASK в 14:02, RESULT нет | coder1 = WORKING |
-| пришёл RESULT в 14:09 | coder1 = IDLE, задача заняла 7 минут |
-| `TAB_STATE: closed` | вкладка мертва |
-| счётчик символов | контекст ~63% |
-| exit code тестов | шаг реально закрыт или нет |
-
-Ни одна строка не требует мнения LLM.
-
-**Вывод пользователю — два слоя:** механическая правда (файлы, статусы, контекст) **плюс** сводка оркестратора («модуль авторизации готов, тесты не написаны»). Не вместо, а рядом. **При расхождении права механическая.**
-
----
-
-## 13. Диалог с пользователем
-
-Большинство вопросов человека — о состоянии. На них отвечает CLI из шины: мгновенно, точно и **бесплатно по контексту оркестратора**.
-
-```
-/status, /agents, /log, /files   → CLI отвечает механически
-/btw <текст>                      → идёт в оркестратор, редко
+```text
+[PLAN]
+STEP 1 | researcher1 | Inspect the current behavior | FILES: notes.md | DEPENDS: none
+STEP 2 | coder1 | Implement the change | FILES: src/feature.ts | DEPENDS: 1
+STEP 3 | tester1 | Run the test suite | FILES: none | DEPENDS: 2
+[/PLAN]
 ```
 
-Сообщение от человека приходит оркестратору тем же тегом, что и всё остальное: `[MSG | from: user | ...]`. Это не отдельная конвенция, которую можно проигнорировать, а тот же механизм, на котором держится его работа. Приоритет держит CLI — сообщения от `user` встают в начало очереди инъекций.
+The CLI validates syntax, known agents, and dependency cycles. Nothing executes until the user approves the plan. Ready independent steps may run together, while overlapping file claims are serialized. The CLI dispatches steps; the orchestrator does not manually resend approved work.
 
-> Риск не снимается полностью: слабая модель может сбиться. Но он снижается на порядок тем, что `/btw` — редкая операция, а не основной способ узнать, что происходит.
+The execution engine stops releasing new steps after `/stop`. Failed results, failed verification, ownership violations, and low self-assessment escalate to the orchestrator rather than silently continuing dependent work.
 
----
+## Verification and checkpoints
 
-## 14. Роли и скиллы
+An agent requests test execution with `TESTS_READY`. The CLI accepts only allowlisted command forms, rejects shell metacharacters, runs the process with a timeout, records output, and uses the actual exit code.
 
-Роль = MD-файл в `/skills/`. Пользователь кладёт свой файл — роль появляется в списке. Захардкоженного перечня ролей нет.
+Before an approved step modifies declared files, the CLI can create a pre-task Git checkpoint. A successful verified step creates a completion checkpoint containing only checkpointable step files. `/undo <task_id>` performs a Git revert for the selected task and reports conflicts without resolving them automatically.
 
-Обязательный frontmatter:
-```markdown
----
-name: seo_auditor
-summary: аудит сайтов на техническое SEO, выдаёт отчёт в audit.md
----
-# полная роль...
-```
+When Git checkpoints are disabled, the TUI displays a persistent warning and reliable undo is unavailable.
 
-`summary` **обязателен и валидируется при загрузке** — из него собирается ростер для оркестратора. Роль без summary не появится в списке.
+## Filesystem and privacy boundaries
 
-Оркестратор — обычный агент с ролью `orchestrator`. Тот же флоу создания, тот же механизм бэкапа. CLI знает про его особый статус, но код инициализации общий.
+All FS paths are resolved relative to the selected project root. Absolute paths, traversal, realpath escapes, `.git`, dependency directories, runtime state, and configured protected patterns are rejected.
 
----
+Built-in privacy rules exclude common secret files such as `.env`, private keys, and credentials. Readable source files are scanned for secret-shaped values and matching values are masked before content is returned to an agent. `.freeagentignore` extends the exclusion rules for each project.
 
-## 15. Инициализация агента
+## Browser resilience
 
-**Два флоу, один код** (`initializeAgent`):
+Browser DOMs are unstable, so adapters use selector fallback chains and conservative heuristics. A candidate selector must be confirmed before it replaces a known selector. Complete protocol blocks can finish a response even when a stale busy indicator remains visible.
 
-**Флоу А — пиннинг (первый раз, делает человек).** Пользователь открыл чат, залогинился → кликает расширение → «сделать агентом» → выбирает роль из `/skills/` → агент появляется в CLI.
+The service worker recreates the offscreen document when necessary and reinjects the content script if a tab no longer has a receiver. Directory handles are stored in IndexedDB, but the browser may still require the user to restore permission after a reload or restart.
 
-Решает проблему авторизации *по построению*: чат уже открыт, значит вход выполнен, значит нужный аккаунт выбран.
+## Current boundary
 
-**Флоу Б — программное открытие (делает система).** `chrome.tabs.create({ url, active: false })` + инжект. Используется для recovery и активации бэкапа. Работает только там, где вход уже выполнен; иначе `BLOCKED: auth_required`.
-
-Третий вариант (пользователь скидывает URL) отвергнут: URL не идентифицирует конкретную вкладку и ничего не гарантирует про сессию.
-
-**Полностью-CLI инициализация — пост-MVP.** Человек может забыть сменить аккаунт, и всё встанет.
-
----
-
-## 16. Известные ограничения
-
-Записаны честно, чтобы не изображать, что их нет:
-
-1. **Кросс-браузерное восстановление невозможно.** `chrome.tabs.create()` открывает вкладку в браузере своего расширения. Агент упал в Opera, супервизор в Chrome — восстановленный агент получит не тот аккаунт. Авто-recovery только внутри инстанса; иначе NOTIFY + ручной подъём.
-2. **Offscreen document — единая точка отказа своего инстанса.** Он единственный держатель FSA-хэндла. Верно в любой схеме.
-3. **Счётчик контекста — оценка, не измерение** (см. §6).
-4. **Тесты не абсолютный ground truth** (см. §9).
-5. **Параллелизм ограничен непересекающимися файлами** (см. §10).
-6. **Задержка `chrome.alarms`** — практический минимум периода 1 минута; между событием и реакцией расширения возможна задержка.
-7. **Бэкап в закрытом браузере** — команда ждёт в файле до запуска браузера. Мгновенного переключения на выключенный браузер не бывает.
-8. **Автоматизация веб-интерфейсов нарушает ToS большинства провайдеров.** Ответственность на пользователе. Формулировка для README готовится к публикации репозитория.
-9. **Gemini-сайдбар в Chrome недоступен.** Это нативный UI браузера, а не веб-страница: нет URL для `chrome.tabs.create`, нет document для content script. Только `gemini.google.com`.
-
----
-
-## 17. Процесс разработки
-
-### Спека = контракт
-Каждая спека: Goal / Input / Output / Constraints / Dependencies / Tests / Definition of done. **Только специфичное для этой спеки** — сквозные решения живут здесь, в архитектуре, и не дублируются.
-
-Claude Code получает: `ARCHITECTURE.md` (постоянно, через `CLAUDE.md`) + одну спеку за раз.
-
-### Накопительные тесты
-**Каждый PR заканчивается прогоном integration check'ов всех предыдущих PR**, не только своего. Ловим поломку старого новым сразу, а не через пять спек.
-
-### Порядок PR
-См. `ROADMAP.md`.
-
----
-
-## Журнал решений
-
-Хронологически, с обоснованием. Строка = решение.
-
-### Шина и формат
-1. **Двухуровневая запись** — расширение в `incoming/`, CLI в главную шину. *Причина: у FSA нет атомарного эксклюзивного создания файла, lock со стороны расширения невозможен.*
-2. **Формат — чистый JSON Lines**, тег-формат только слой перевода. *Причина: имя `.jsonl` противоречило тег-примерам; Fable сделал бы что-то среднее.*
-3. **Файлы по `instance_id`, а не по `agent_id`** — писатель физически один на инстанс. *Причина: content script не владеет FSA; заодно снимает курицу-яйцу регистрации.*
-4. **`instance_id` = установка расширения в профиле**, UUID в `chrome.storage.local`. *Следствие: 5 аккаунтов = 5 профилей = 5 инстансов автоматически.*
-5. **`commands/` тоже по инстансам.** *Причина: браузеру не нужна логика «это не мне»; выключенный браузер копит команды.*
-6. **`REGISTER_REQUEST` — обычное сообщение**, не спецканал. *Причина: `instance_id` существует до агентов.*
-
-### Разделение ролей
-7. **Supervisor ≠ Orchestrator** — механика отдельно от суждения.
-8. **Агенты не пишут на диск**, только WRITE в CLI. *Следствие: CLI знает про каждый файл, валидация путей и чекпоинты в одном месте.*
-9. **Оркестратор маршрутизирует решения, ФС переносит данные.**
-10. **Звезда, а не сетка.** *Причина: N² путей слабые модели не вывозят.*
-11. **CLI валидирует адресата** против реестра.
-
-### Наблюдение
-12. **HEARTBEAT от LLM убран.** *Причина: модель не шлёт сообщения по своей инициативе; здоровый агент считался бы мёртвым.*
-13. **`TAB_STATE` через `chrome.tabs`** — реактивно вместо таймаутов.
-14. **Heartbeat расширение → CLI** остаётся, один на инстанс.
-15. **Recovery реактивный**, без `HEARTBEAT_TIMEOUT_MS`.
-16. **Контекст — скрейпинг символов / `context_window`**, порог 60% настраиваемый. *Оговорка: оценка, не измерение.*
-17. **Детект нездоровых ответов в расширении, таймеры в CLI.** *Причина: правило MV3.*
-
-### Registry и роли
-18. **Единая схема адаптера без v1/v2.** *Причина: схема была продублирована в двух спеках, поля терялись; мигрировать нечего.*
-19. **`failure_patterns` вместо `unavailable_patterns`** — четыре класса. *Позитивных паттернов не бывает: успех приходит тегами.*
-20. **`context_window` в registry** — для честных процентов.
-21. **`registry_version` остаётся** — но это версия *содержимого* для community-обновлений, не версия схемы.
-22. **Роль = MD в `/skills/`**, кастомные поддерживаются.
-23. **Обязательный `summary` во frontmatter.** *Причина: `agent_id` идентифицирует, но не описывает; полный MD дорог.*
-
-### Оркестратор
-24. **Оркестратор — обычный агент с ролью** (вариант А). *Причина: меньше кода, бэкап работает тем же механизмом.*
-25. **Сводки вместо сырья.**
-26. **Не знает про бэкапы** — `agent_id` сохраняется при переключении.
-27. **План как исполняемая программа** — CLI ведёт, оркестратор просыпается на исключениях.
-28. **Дедупликация статусов.**
-29. **Эскалация только по исключениям.**
-30. **Ростер с однострочными описаниями.**
-
-### Бэкапы и инициализация
-31. **Горячий бэкап в v1**, холодный — пост-MVP. *Причина: `instance_id` это UUID, холодный конфиг невозможно заполнить руками.*
-32. **Пиннинг вкладки — основной флоу.** *Причина: решает авторизацию по построению.*
-33. **Два флоу на одном коде** — программное открытие всё равно нужно для recovery.
-34. **MEMORY.md постоянно**, после каждой задачи. *Причина: при промахе счётчика модель упрётся в стену посреди генерации памяти.*
-35. **Шаблон MEMORY инлайном** при переключении, не «напиши как в скилле». *Причина: роль в начале длинного треда, внимание к далёкому контексту деградирует.*
-36. **CLI держит очередь задач** для агента в переходном статусе (не `IDLE`/`WORKING`).
-
-### Верификация и параллелизм
-37. **CLI не верит DONE — запускает тесты.**
-38. **Протокол тест → код → TESTS_READY**, поле `kind` в WRITE.
-39. **Белый список команд + таймаут.**
-40. **Самооценка в процентах** — второй слой для нетестируемого, изредка.
-41. **План назначает владельцев файлов**, пересечение → последовательно.
-42. **WRITE вне заявленных файлов отклоняется.**
-43. **MVP: параллелизм только для непересекающихся файлов.**
-
-### Процесс
-44. **`ARCHITECTURE.md` + чистые контракты-спеки.** *Причина: решения расползлись по спекам, одно решение в четырёх местах и в одном устарело.*
-45. **Накопительные integration-тесты каждый PR.**
-46. **Смена версии архитектуры → новая сессия Claude Code.**
-
-### Ревизия v1.1
-47. **`ACTIVE` убран из `AgentStatus`.** Свободный готовый агент = `IDLE`, занятый = `WORKING`. Буфер задач — по переходным статусам (не `IDLE`/`WORKING`), не по «вне `ACTIVE`». *Причина: `ACTIVE`/`IDLE`/`WORKING` пересекались по смыслу, предикат «вне `ACTIVE`» застревал на освободившемся агенте.*
-48. **`id` (uuid) в конверте `BusMessage`.** Ставит отправитель при создании, стабилен до записи в incoming. Дедуп при мерже делает перенос идемпотентным. *Причина: at-least-once без ключа идемпотентности давал дубли доставки при краше между записью в шину и сдвигом курсора.*
-49. **`STATUS` вычисляет CLI** из тайминга TASK/RESULT, агент его не шлёт. *Причина: модель не инициирует сообщений (§6); агентский STATUS был бы тем же heartbeat-от-LLM, что убран.*
-50. **`seq` восстанавливается из хвоста шины при старте CLI** (max + 1). *Причина: счётчик в памяти после рестарта столкнулся бы с уже записанными `seq`.*
-51. **`HANDOFF` удалён** из `MessageType` — мёртвый тип, переключение бэкапа идёт через `COMMAND` + `NOTIFY`.
-
-### Отложено (пост-MVP)
-- Холодный бэкап (конфиг вместо открытой вкладки)
-- FreeAgent как OpenAI-совместимый эндпоинт
-- Полностью-CLI инициализация
-- README / формулировка про ToS
-- Форк или интеграция с opencode — **отвергнуто**: их агентный цикл построен на function calling, которого в браузерных чатах нет; эмуляция тегами ломалась бы непредсказуемо
+The live ChatGPT workflow is validated. Other adapters share the same schema and automated tests, but browser UI changes may require selector updates. FreeAgent remains a beta and should be used with Git enabled and a reviewable working tree.

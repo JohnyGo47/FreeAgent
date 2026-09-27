@@ -1,5 +1,5 @@
-// Ink TUI — рендер асинхронный, не блокирует главный цикл (spec_cli constraint). Без JSX: node
-// стрипует типы, а не транспилирует JSX, поэтому компоненты собраны через React.createElement.
+// Ink TUI - asynchronous rendering, does not block the main loop (spec_cli constraint). Without JSX: node
+// strips types rather than transpiling JSX, so components are assembled via React.createElement.
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { AgentsRegistry } from '../registry/registry.ts';
@@ -9,12 +9,12 @@ import type { FreeAgentConfig } from '../config/config.ts';
 
 const h = React.createElement;
 
-// spec_git_checkpoints задача B.13: "не-git проект — при отказе чекпоинты отключены, ПОСТОЯННЫЙ
-// warning в TUI (не молчать)". Чистая функция — тестируется без ink render harness; init.ts
-// персистирует git_checkpoints:false, поэтому баннер переживает рестарт CLI, не только текущую
-// сессию (в отличие от разового console.warn в cmdInit).
+// spec_git_checkpoints task B.13: "non-git project - checkpoints disabled on failure, PERMANENT
+// warning in TUI (don't be silent)". Pure function - tested without ink render harness; init.ts
+// persists git_checkpoints:false, so the banner survives a CLI restart, not just the current one
+// session (as opposed to the one-time console.warn in cmdInit).
 export function checkpointsWarning(config: FreeAgentConfig): string | null {
-  return config.git_checkpoints === false ? 'WARNING: git-чекпоинты отключены — /undo недоступен, изменения агентов не автокоммитятся' : null;
+  return config.git_checkpoints === false ? 'WARNING: git checkpoints are disabled - /undo is not available, agent changes are not auto-committed' : null;
 }
 
 export interface AppProps {
@@ -23,13 +23,13 @@ export interface AppProps {
   getGate: () => PlanGate;
   onApprovePlan: () => void;
   onCancelPlan: () => void;
-  onEditPlan: () => void; // bin.ts делает реальный $EDITOR (spawn + чтение temp-файла), App про это не знает
+  onEditPlan: () => void; // bin.ts does the real $EDITOR (spawn + reading the temp file), the App doesn't know about it
   tickMs?: number;
 }
 
-// spec_cli_plan_mode Output: "[Enter] выполнить / [e] править в $EDITOR / [Esc] отменить".
+// spec_cli_plan_mode Output: "[Enter] execute / [e] edit in $EDITOR / [Esc] cancel."
 function renderPlan(gate: PlanGate): React.ReactElement[] {
-  if (!gate.plan) return [];
+  if (gate.status !== 'plan_ready' || !gate.plan) return [];
   const rows = gate.plan.steps.map((s) =>
     h(
       Text,
@@ -38,9 +38,9 @@ function renderPlan(gate: PlanGate): React.ReactElement[] {
     ),
   );
   return [
-    h(Text, { key: 'hdr', bold: true, color: 'yellow' }, 'PLAN ждёт подтверждения:'),
+    h(Text, { key: 'hdr', bold: true, color: 'yellow' }, 'PLAN awaiting confirmation:'),
     ...rows,
-    h(Text, { key: 'help', dimColor: true }, '[Enter] выполнить  [e] править в $EDITOR  [Esc] отменить'),
+    h(Text, { key: 'help', dimColor: true }, '[Enter] execute [e] edit in $EDITOR [Esc] cancel'),
   ];
 }
 
@@ -58,8 +58,8 @@ export function App({ getContext, onResult, getGate, onApprovePlan, onCancelPlan
   const planReady = gate.status === 'plan_ready';
 
   useInput((char, key) => {
-    // Пока план ждёт подтверждения — модальный режим: три клавиши решают его судьбу, обычный
-    // ввод REPL приостановлен (spec_cli_plan_mode Output).
+    // While the plan is waiting for confirmation - modal mode: three keys decide its fate, normal
+    // REPL input paused (spec_cli_plan_mode Output).
     if (planReady) {
       if (key.return) onApprovePlan();
       else if (key.escape) onCancelPlan();
@@ -86,8 +86,8 @@ export function App({ getContext, onResult, getGate, onApprovePlan, onCancelPlan
     h(Text, { key: a.agent_id }, `${a.agent_id} [${a.role}] ${a.status}`),
   );
 
-  // Индикатор режима — постоянный, не только во время активного гейта (spec_cli_plan_mode
-  // constraint "yolo... постоянный индикатор в statusbar").
+  // The mode indicator is constant, not only during an active gate (spec_cli_plan_mode
+  // constraint "yolo... constant indicator in statusbar").
   const modeLabel = gate.status === 'yolo' || getContext().config.mode === 'yolo' ? 'YOLO' : 'PLAN';
   const warning = checkpointsWarning(getContext().config);
 

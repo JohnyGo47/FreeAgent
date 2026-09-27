@@ -1,7 +1,7 @@
-// Сквозной тест: mainLoop.ts реально вызывает verification (реальный npm test, реальный процесс)
-// И git_checkpoints (реальный git-репозиторий) на одном и том же RESULT:DONE — то, что unit-тесты
-// verification.test.ts/gitCheckpoints.test.ts проверяют по отдельности (с моками/инъекцией), здесь
-// проверяется как единая цепочка через настоящий runMainLoopOnce. Ни git, ни npm test не замоканы.
+// End-to-end test: mainLoop.ts actually calls verification (real npm test, real process)
+// And git_checkpoints (real git repository) on the same RESULT:DONE - that's what unit tests
+// verification.test.ts/gitCheckpoints.test.ts are checked individually (with mocks/injection), here
+// checked as a single chain through a real runMainLoopOnce. Neither git nor npm test are bugged.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
@@ -60,7 +60,7 @@ async function setUpApprovedPlan(freeagentDir: string, writer: BusWriter, state:
   state.execution = startExecution(state.gate.plan!);
 }
 
-test('happy path: реальный npm test зелёный -> шаг закрыт, реальные pre-task + done коммиты в реальном git-репозитории', async (t) => {
+test('happy path: real npm test green -> step closed, real pre-task + done commits in real git repository', async (t) => {
   const projectRoot = await gitProject();
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const freeagentDir = join(projectRoot, 'freeagent');
@@ -72,8 +72,8 @@ test('happy path: реальный npm test зелёный -> шаг закры�
   const round = await runMainLoopOnce(freeagentDir, writer, state); // TASK -> coder1
   const taskId = (round.commands.find((c) => c.message.type === 'TASK')!.message.payload as { task_id: string }).task_id;
 
-  // Агент пишет тест первым (протокол spec_verification), затем код — обе записи реально идут на
-  // диск через FS_CALL/write.ts.
+  // The agent writes the test first (spec_verification protocol), then the code - both records actually go to
+  // disk via FS_CALL/write.ts.
   const testBody = 'const { add } = require("./math.js"); if (add(2, 3) !== 5) { console.error("boom"); process.exit(1); } console.log("ok");';
   await writeFile(
     join(freeagentDir, 'incoming', 'browser_a.jsonl'),
@@ -92,7 +92,7 @@ test('happy path: реальный npm test зелёный -> шаг закры�
   await runMainLoopOnce(freeagentDir, writer, state);
   assert.equal(await readFile(join(projectRoot, 'math.js'), 'utf8'), codeBody);
 
-  // Только ОДИН pre-task коммит несмотря на два WRITE (дедуп по checkpoints.json).
+  // Only ONE pre-task commit despite two WRITEs (dedup on checkpoints.json).
   let checkpoints = await loadCheckpoints(freeagentDir);
   assert.equal(checkpoints.length, 1);
   assert.equal(checkpoints[0].task_id, taskId);
@@ -102,9 +102,9 @@ test('happy path: реальный npm test зелёный -> шаг закры�
   await runMainLoopOnce(freeagentDir, writer, state);
 
   await writeFile(join(freeagentDir, 'incoming', 'browser_a.jsonl'), line('r1', 'coder1', 'orchestrator', 'RESULT', { task_id: taskId, status: 'DONE', summary: 'added math.add' }) + '\n', 'utf8');
-  const finalRound = await runMainLoopOnce(freeagentDir, writer, state); // здесь реально спавнится npm test
+  const finalRound = await runMainLoopOnce(freeagentDir, writer, state); // npm test actually spawns here
 
-  assert.equal(state.execution, undefined); // единственный шаг плана закрыт -> план завершён
+  assert.equal(state.execution, undefined); // the only step of the plan is closed -> the plan is completed
   const bus = await readFile(join(freeagentDir, 'message_bus.jsonl'), 'utf8');
   assert.equal(bus.includes('PLAN_ESCALATION'), false);
   assert.match(bus, /PLAN_COMPLETE/);
@@ -117,11 +117,11 @@ test('happy path: реальный npm test зелёный -> шаг закры�
 
   checkpoints = await loadCheckpoints(freeagentDir);
   const { stdout: head } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: projectRoot });
-  assert.equal(checkpoints[0].done_commit, head.trim()); // checkpoints.json несёт настоящий hash HEAD
+  assert.equal(checkpoints[0].done_commit, head.trim()); // checkpoints.json carries the real hash HEAD
   assert.equal(checkpoints[0].summary, 'added math.add');
 });
 
-test('red path: реальный npm test падает -> эскалация с реальным stderr/stdout, done-коммит НЕ создаётся', async (t) => {
+test('red path: real npm test crashes -> escalation with real stderr/stdout, done commit is NOT created', async (t) => {
   const projectRoot = await gitProject();
   t.after(() => rm(projectRoot, { recursive: true, force: true }));
   const freeagentDir = join(projectRoot, 'freeagent');
@@ -153,15 +153,15 @@ test('red path: реальный npm test падает -> эскалация с 
 
   await writeFile(join(freeagentDir, 'incoming', 'browser_a.jsonl'), line('r1', 'coder1', 'orchestrator', 'RESULT', { task_id: taskId, status: 'DONE', summary: 'added math.add' }) + '\n', 'utf8');
   await runMainLoopOnce(freeagentDir, writer, state);
-  const delivered = await runMainLoopOnce(freeagentDir, writer, state); // эскалация лежит на шине с прошлого тика -> маршрутизируется сейчас
+  const delivered = await runMainLoopOnce(freeagentDir, writer, state); // escalation has been on the bus since the last tick -> is being routed now
 
   const escalation = delivered.commands.find((c) => c.message.type === 'NOTIFY' && c.instanceId === 'browser_o');
   assert.ok(escalation);
   assert.match((escalation!.message.payload as { details: string }).details, /boom: add is broken/);
 
   const log = await gitLog(projectRoot);
-  assert.equal(log.some((m) => m.startsWith(`freeagent: ${taskId} —`)), false); // done-коммит не создан
-  assert.equal(log[0], `freeagent: pre-task ${taskId}`); // pre-task остался как маркер начала работы
+  assert.equal(log.some((m) => m.startsWith(`freeagent: ${taskId} -`)), false); // done commit not created
+  assert.equal(log[0], `freeagent: pre-task ${taskId}`); // pre-task remains as a start marker
 
   const checkpoints = await loadCheckpoints(freeagentDir);
   assert.equal(checkpoints[0].done_commit, undefined);

@@ -1,85 +1,36 @@
-# FreeAgent — Roadmap
-# Version: 3.0
-# Дата: 2026-08-02
+# FreeAgent Roadmap
 
-> Архитектурные решения — в `ARCHITECTURE.md` (журнал из 46 решений).
-> Здесь только статус спек и порядок работ.
+FreeAgent is in beta. The initial architecture and the complete browser-to-CLI workflow are implemented; current work is focused on reliability, usability, and broader live validation.
 
-## Статус спек
+## Implemented
 
-### ✅ Готовы
-| Спека | Версия | Что внутри |
-|---|---|---|
-| ARCHITECTURE.md | 1.1 | сквозные решения + журнал |
-| STACK.md | 2.0 | стек, файловая структура, отвергнутые варианты |
-| spec_message_bus_types | 2.1 | 17 типов, AgentStatus (10, без ACTIVE), id, конвертеры |
-| spec_message_bus_write | 3.1 | два уровня, seq-recovery, дедуп по id |
-| spec_message_bus_read | 2.1 | курсоры (at-least-once), две реализации source |
-| spec_config | 1.0 | настройки, связывание CLI ↔ расширение |
-| spec_cli | 1.0 | команды, TUI, главный цикл |
-| spec_ext_manifest | 2.0 | MV3-каркас, 4 контекста |
-| spec_fs_folder_access | 2.0 | FSA, IndexedDB, структура папки |
-| spec_llm_adapter_registry | 2.0 | единая схема, failure_patterns, context_window |
-| spec_selector_resilience | 2.0 | цепочки, self-healing, community |
-| spec_skills_system | 1.0 | роли как MD, обязательный summary, ростер |
-| spec_init_agent | 2.0 | два флоу, один код |
-| spec_md_memory_template | 2.0 | формат, постоянная генерация |
-| spec_agent_recovery | 3.0 | реактивный, без таймаутов |
-| spec_response_health | 1.0 | 4 класса нездоровых ответов |
-| spec_backup_agents | 1.0 | горячий бэкап, переключение |
-| spec_plan_execution | 1.0 | план как программа |
-| spec_verification | 1.0 | тест→код→CLI запускает |
-| spec_cli_plan_mode | 2.0 | план по умолчанию, enforcement в CLI |
-| spec_git_checkpoints | 2.0 | чекпоинты, /undo, параллельные DONE |
+- Project initialization and project-local runtime state
+- Manifest V3 extension with popup, background, offscreen, and content contexts
+- Browser tab registration and role-specific INIT prompts
+- Durable message bus with cursors, locking, deduplication, and rotation
+- Agent lifecycle, reconciliation, recovery, and backup-agent support
+- Structured plans with dependencies, approval, file ownership, and escalation
+- Controlled read, list, search, write, and edit operations
+- Secret exclusion and masking
+- Allowlisted test execution with real exit-code verification
+- Git checkpoints and task-level undo
+- Selector fallback and response-health detection
+- Live multi-agent ChatGPT workflow validation
 
-### ⬜ Осталось написать
-| Спека | Зачем |
-|---|---|
-| **spec_file_access** | **READ-протокол, дерево проекта — пишется в отдельном чате, БЛОКЕР PR-4** |
+## Near-term priorities
 
-### Многоэтапные спеки (реализуются в двух PR)
-| Спека | PR | Что в каком PR |
-|---|---|---|
-| spec_message_bus_write | PR-1 + PR-2 | Tier 2 (CLI-мерж) в PR-1; Tier 1 (offscreen-писатель в incoming/) в PR-2 |
-| spec_message_bus_read | PR-1 + PR-2 | NodeFsSource в PR-1; FsaSource в PR-2 |
+1. Exercise write, checkpoint, and undo behavior repeatedly in disposable live projects.
+2. Add live adapter validation for additional supported LLM sites.
+3. Improve setup diagnostics when the CLI, selected directory, and browser registration do not match.
+4. Add release packaging so users do not need to run the CLI directly from TypeScript source.
+5. Add CI for tests, type checking, and extension builds.
 
-PR-2 завершён (integration check "расширение пишет в incoming → Node читает" зелёный) — обе спеки в `specs/done/`.
+## Later
 
-## Порядок PR
+- Signed extension distribution
+- Better observability for message queues and agent state
+- Adapter compatibility reporting
+- Guided recovery for changed browser selectors
+- Cross-platform installation and update commands
 
-**PR-1 — Шина** *(самодостаточен, готов к передаче)*
-`/shared` каркас → message_bus_types → message_bus_write (Tier 2) → message_bus_read (NodeFsSource)
-Тест: write → read → seq монотонный.
-
-**PR-2 — Каркас расширения**
-ext_manifest → fs_folder_access → message_bus_write Tier 1 → message_bus_read FsaSource
-Тест: расширение пишет в incoming → Node читает.
-
-**PR-3 — CLI**
-config → cli → cli_init
-Тест: полный цикл incoming → merge → главная шина → читатель.
-
-**PR-4 — Адаптеры и инжект**
-llm_adapter_registry → llm_message_format → response_complete_detection → **file_access**
-
-**PR-5 — Агенты**
-skills_system → md_orchestrator → init_agent → md_memory_template
-
-**PR-6 — Устойчивость**
-agent_recovery → response_health → backup_agents → selector_resilience → bus_rotation
-
-**PR-7 — Безопасность**
-write_path_validation → context_privacy_filter
-
-**PR-8 — Координация**
-cli_plan_mode → plan_execution → verification → git_checkpoints
-
-## Правило тестирования
-Каждый PR заканчивается прогоном integration check'ов **всех** предыдущих PR, не только своего.
-
-## Отложено (пост-MVP)
-- Холодный бэкап (конфиг вместо открытой вкладки)
-- FreeAgent как OpenAI-совместимый эндпоинт
-- Полностью-CLI инициализация агентов
-- README и формулировка про ToS
-- Цепочки бэкапов (бэкап бэкапа)
+Architecture changes should be recorded in `ARCHITECTURE.md`; implementation details belong in focused specs and tests.

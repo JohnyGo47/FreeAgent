@@ -1,6 +1,6 @@
-// Сборка вертикали: текст → parseFsCall → enforcement (MULTIPLE_CALLS) → dispatch → [FS_RESULT]
-// (spec_file_access шаг 4). "Играешь модель руками" — вход текст хода модели, выход текст(ы)
-// для инъекции обратно.
+// Vertical assembly: text → parseFsCall → enforcement (MULTIPLE_CALLS) → dispatch → [FS_RESULT]
+// (spec_file_access step 4). “You play the model with your hands” - input text of the model’s move, output text(s)
+// for injection back.
 import { parseFsCall } from './parseFsCall.ts';
 import { dispatch } from './dispatch.ts';
 import { renderFsResult } from './dispatch.ts';
@@ -8,8 +8,8 @@ import { fsError, type FsResult } from './types.ts';
 
 export interface FsTurnResult {
   hasCall: boolean;
-  results: FsResult[]; // [0] — исполненный первый вызов; остальные — MULTIPLE_CALLS
-  rendered: string[]; // текстовые [FS_RESULT] блоки в том же порядке
+  results: FsResult[]; // [0] — first call completed; the rest are MULTIPLE_CALLS
+  rendered: string[]; // text [FS_RESULT] blocks in the same order
 }
 
 export async function runFsTurn(root: string, modelText: string, ownedFiles?: string[] | null): Promise<FsTurnResult> {

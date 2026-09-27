@@ -1,5 +1,5 @@
-// Перезапуск CLI: реестр не считается достоверным, сверяется с реальностью через TAB_STATE
-// (ARCHITECTURE §2 "Завершение CLI", spec_cli constraint).
+// CLI restart: the registry is not considered reliable, checked against reality via TAB_STATE
+// (ARCHITECTURE §2 "Completing the CLI", spec_cli constraint).
 import { randomUUID } from 'node:crypto';
 import type { AgentStatus, BusMessage, CommandPayload, TabStatePayload } from '../../../shared/bus-types/index.ts';
 import type { AgentsRegistry } from '../registry/registry.ts';
@@ -27,7 +27,7 @@ const STATE_TO_STATUS: Record<TabStatePayload['state'], AgentStatus> = {
   selectors_broken: 'SELECTOR_BROKEN',
 };
 
-// Агент без ответа в окне сверки считается мёртвым — не оставлять реестр на честном слове.
+// An agent without a response in the reconciliation window is considered dead - do not leave the register on parole.
 export function reconcileFromResponses(
   registry: AgentsRegistry,
   responses: Record<string, TabStatePayload>,

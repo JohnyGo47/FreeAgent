@@ -1,46 +1,37 @@
-# CLAUDE.md — операционные правила для Claude Code
+# Repository Working Rules
 
-Это правила работы в репозитории FreeAgent. Не описание проекта — описание в
-`ARCHITECTURE.md`. Здесь только как себя вести.
+These rules apply to coding work in the FreeAgent repository.
 
-## Перед любой задачей
+## Before changing code
 
-1. Прочитай `ARCHITECTURE.md` — сквозные решения и принципы. Всегда первым.
-2. Прочитай `STACK.md` — стек, файловая структура, отвергнутые варианты.
-3. Работай **только** со спеками в `specs/current/`. Это спеки текущего PR.
-   Спеки в `specs/done/` — справка по уже реализованному, не трогай их и не
-   реализуй заново.
+1. Read `ARCHITECTURE.md` for component boundaries and invariants.
+2. Read `STACK.md` for platform constraints.
+3. Inspect the relevant implementation and tests before editing.
 
-## Границы PR
+## Scope
 
-- Реализуй ровно то, что в `specs/current/`. **Ничего из других PR не начинай**,
-  даже если видишь ссылки на них в `ARCHITECTURE.md` или в зависимостях спек.
-  Ссылка на ещё не реализованную спеку — это интерфейс на будущее, а не сигнал
-  реализовать её сейчас.
-- Если для работы не хватает чего-то из будущего PR — останови задачу и скажи
-  об этом, не реализуй недостающее сам.
+- Implement only the requested change.
+- Preserve the separation between `shared`, `cli`, and `extension`.
+- Do not bypass the CLI filesystem or verification boundaries.
+- Do not edit architecture decisions as a side effect of an unrelated task.
+- Treat files in `specs/done/` as implemented behavior references.
 
-## Тесты — до кода
+## Tests
 
-- Тест пишется **первым**, до реализации.
-- Новый тест на ещё не написанный код обязан **падать** (красный) по правильной
-  причине — функция/модуль не существует. Не подгоняй тест под уже написанный код.
-- Покажи, что тест красный, затем реализуй код, затем покажи, что он зелёный.
-- Не пиши тесты-заглушки (`expect(true).toBe(true)`, моки, проходящие всегда).
-- Для задачи по спеке имена тестов должны соответствовать разделу Tests этой спеки.
+- Add or update a focused test when behavior changes.
+- Prefer a failing test before the implementation when practical.
+- Run the focused test, then the complete suite.
+- Before handoff, run `npm test`, `npm run typecheck`, and `npm run build -w extension`.
 
-## Завершение шага
+## Extension constraints
 
-- Все тесты зелёные — текущего PR **и** integration-check'и всех предыдущих PR.
-- Затем git commit.
-- Если по ходу реализации нашёл ошибку в спеке — не правь молча: опиши её и
-  останови, спека правится до следующего PR отдельно.
-- `ARCHITECTURE.md` не меняй сам. Нужна правка архитектуры — скажи, это делается
-  в отдельной сессии.
+- Keep the extension compatible with Manifest V3 suspension.
+- Use `chrome.alarms` for background scheduling.
+- `setInterval` is allowed only in `extension/src/content/`.
+- Keep DOM-specific behavior behind adapter and selector resolution logic.
 
-## Формат
+## Completion
 
-- Монорепо: `/shared`, `/cli`, `/extension`. Общий код протокола — в `/shared`,
-  не дублируй его в CLI и расширении.
-- Правило MV3 (`ARCHITECTURE.md` §5): в коде расширения `setInterval` допустим
-  только в `src/content/`. Везде ещё — `chrome.alarms`.
+- Do not claim that tests passed unless their real command completed successfully.
+- Preserve unrelated user changes.
+- Keep runtime state, generated bundles, dependencies, credentials, and editor files out of Git.

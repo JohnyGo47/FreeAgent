@@ -1,4 +1,4 @@
-// /status, /agents, /log, /files — механическая правда из шины и реестра, без обращения к оркестратору
+// /status, /agents, /log, /files - mechanical truth from the bus and registry, without contacting the orchestrator
 // (ARCHITECTURE §12, §13; spec_cli).
 import type { AgentsRegistry } from '../registry/registry.ts';
 import type { BusMessage, WritePayload } from '../../../shared/bus-types/index.ts';

@@ -9,7 +9,7 @@ async function tmpDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'freeagent-config-'));
 }
 
-test('missing config: all defaults, not initialized, работа не блокируется', async (t) => {
+test('missing config: all defaults, not initialized, work is not blocked', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
 
@@ -18,7 +18,7 @@ test('missing config: all defaults, not initialized, работа не блок�
   assert.deepEqual(config, DEFAULT_CONFIG);
 });
 
-test('partial config: недостающие поля берутся из умолчаний', async (t) => {
+test('partial config: missing fields are taken from default', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(join(dir, 'freeagent.config.json'), JSON.stringify({ mode: 'yolo' }), 'utf8');
@@ -29,7 +29,7 @@ test('partial config: недостающие поля берутся из умо
   assert.equal(config.context_threshold_pct, DEFAULT_CONFIG.context_threshold_pct);
 });
 
-test('неизвестное поле сохраняется при перезаписи', async (t) => {
+test('unknown field is preserved when overwritten', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(join(dir, 'freeagent.config.json'), JSON.stringify({ some_future_field: 'kept' }), 'utf8');
@@ -41,7 +41,7 @@ test('неизвестное поле сохраняется при переза
   assert.equal(onDisk.some_future_field, 'kept');
 });
 
-test('project_id совпадает между двумя независимыми чтениями конфига → связь подтверждена', async (t) => {
+test('project_id matches between two independent config reads → connection confirmed', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
 
@@ -54,7 +54,7 @@ test('project_id совпадает между двумя независимым
   assert.equal(second.initialized, true);
 });
 
-test('папка без конфига → initialized: false (сигнал для предупреждения о неинициализированной папке)', async (t) => {
+test('folder without config → initialized: false (signal to warn about an uninitialized folder)', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
 

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FolderAccessService, FolderAccessLost, resolvePath, type HandleStore } from './folderAccessService.ts';
 
-// Мок FileSystemDirectoryHandle — только та часть контракта, что использует сервис.
+// Mock FileSystemDirectoryHandle - only that part of the contract that uses the service.
 class FakeDirHandle {
   dirs = new Map<string, FakeDirHandle>();
   files = new Set<string>();
@@ -62,7 +62,7 @@ test('ensureStructure on empty folder creates whole tree; second call does not o
   assert.equal(fake.dirs.size, 6);
   assert.equal(fake.files.size, 6);
 
-  fake.files.add('message_bus.jsonl'); // симулирует уже записанные данные
+  fake.files.add('message_bus.jsonl'); // simulates already written data
   await service.ensureStructure();
   assert.ok(fake.files.has('message_bus.jsonl'), 'existing file entry is preserved, not recreated');
 });

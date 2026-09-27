@@ -1,5 +1,5 @@
-// File System Access API — не входит в стандартный lib.dom.d.ts TypeScript (Chrome-only API).
-// Минимальные типы под то, что реально используется в этом расширении.
+// File System Access API - not included in the standard lib.dom.d.ts TypeScript (Chrome-only API).
+// Minimal types for what is actually used in this extension.
 
 export {};
 
@@ -16,7 +16,7 @@ declare global {
     showDirectoryPicker(options?: { mode?: 'read' | 'readwrite' }): Promise<FileSystemDirectoryHandle>;
   }
 
-  // FileSystemObserver — Chrome/Edge only (spec_message_bus_read), не в lib.dom.d.ts.
+  // FileSystemObserver - Chrome/Edge only (spec_message_bus_read), not in lib.dom.d.ts.
   interface FileSystemObserverConstructor {
     new (callback: () => void): {
       observe(handle: FileSystemHandle): Promise<void>;

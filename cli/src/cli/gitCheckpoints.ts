@@ -1,5 +1,5 @@
-// Автокоммит шагов агентов + /undo (spec_git_checkpoints, ARCHITECTURE §10/§11). child_process
-// git, не libgit2 (constraint) — целевая аудитория точно имеет git в PATH.
+// Auto-commit agent steps + /undo (spec_git_checkpoints, ARCHITECTURE §10/§11). child_process
+// git, not libgit2 (constraint) - the target audience definitely has git in PATH.
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
@@ -37,8 +37,8 @@ export async function saveCheckpoints(freeagentDir: string, entries: CheckpointE
   await writeFile(checkpointsPath(freeagentDir), JSON.stringify(entries, null, 2) + '\n', 'utf8');
 }
 
-// Не коммитить (задача B.11): /freeagent/ и privacy-исключения — общий источник истины
-// (privacyRules.ts, PR-7), список не дублируется здесь.
+// Don't commit (task B.11): /freeagent/ and privacy exceptions are a common source of truth
+// (privacyRules.ts, PR-7), the list is not duplicated here.
 export function isCheckpointable(relPath: string): boolean {
   const segments = relPath.split(/[\\/]/);
   if (segments.some((seg) => PROTECTED_DIR_NAMES.includes(seg))) return false;
@@ -48,11 +48,11 @@ export function isCheckpointable(relPath: string): boolean {
 
 export type CheckpointOutcome = { hash: string } | { error: string };
 
-// "pre-task" — коммит-маркер, ВСЕГДА пустой (--allow-empty --only, без pathspec): реальный
-// эмпирический тест подтвердил, что --only с пустым pathspec игнорирует staged-изменения
-// пользователя целиком, оставляя их staged как были. Если бы вместо --only мы дали голый
-// --allow-empty, любые staged-изменения пользователя утекли бы в наш коммит — это и есть та
-// самая неприкосновенность истории (задача B.9), проверено экспериментально, не предположено.
+// "pre-task" - commit marker, ALWAYS empty (--allow-empty --only, without pathspec): real
+// empirical test confirmed that --only with empty pathspec ignores staged changes
+// the entire user, leaving them staged as they were. If instead of --only we gave naked
+// --allow-empty, any staged user changes would flow into our commit - this is what
+// the very integrity of history (problem B.9), verified experimentally, not assumed.
 export async function preTaskCheckpoint(cwd: string, taskId: string, runGitFn: GitRunner = runGit): Promise<CheckpointOutcome> {
   try {
     await runGitFn(['commit', '--allow-empty', '--only', '-m', `freeagent: pre-task ${taskId}`], cwd);
@@ -63,11 +63,11 @@ export async function preTaskCheckpoint(cwd: string, taskId: string, runGitFn: G
   }
 }
 
-// "done" — коммит реального содержимого шага. Явный `git add -- <files>` (никогда `git add .`),
-// затем `git commit --only -- <files>` — pathspec на commit тоже, двойная гарантия: даже если
-// у пользователя было что-то ещё staged, коммит захватывает СТРОГО files этого шага (задача
-// B.9/B.10). --allow-empty гарантирует, что коммит #2 существует всегда, даже если все files
-// шага оказались non-checkpointable (privacy/служебные) — "два коммита на task" не нарушается.
+// "done" - commits the actual contents of the step. Explicit `git add -- <files>` (never `git add .`),
+// then `git commit --only -- <files>` - pathspec on commit too, double guarantee: even if
+// the user had something else staged, the commit captures STRICTLY the files of this step (task
+//B.9/B.10). --allow-empty ensures that commit #2 always exists, even if all files
+// the steps turned out to be non-checkpointable (privacy/service) - “two commits per task” is not violated.
 export async function doneCheckpoint(cwd: string, taskId: string, files: string[], summary: string, runGitFn: GitRunner = runGit): Promise<CheckpointOutcome> {
   const toAdd = files.filter(isCheckpointable);
   try {
@@ -85,10 +85,10 @@ export async function doneCheckpoint(cwd: string, taskId: string, files: string[
 
 export type RevertOutcome = { ok: true } | { ok: false; conflict: boolean; detail: string };
 
-// /undo → git revert, никогда git reset (история пользователя неприкосновенна, задача B.12).
-// Конфликт → стоп, вернуть детали как есть — НЕ git revert --abort (это тоже было бы
-// автоматическим решением) и НЕ пытаться разрешить самим. Репозиторий остаётся в состоянии
-// конфликтующего revert, пользователь решает сам обычными git-командами.
+// /undo → git revert, never git reset (user history is inviolable, task B.12).
+// Conflict → stop, return the details as is - NOT git revert --abort (that would also be
+// automatic solution) and DO NOT try to resolve it yourself. The repository remains in the state
+// conflicting revert, the user decides himself using regular git commands.
 export async function undoCheckpoint(cwd: string, entry: CheckpointEntry, runGitFn: GitRunner = runGit): Promise<RevertOutcome> {
   if (!entry.done_commit) return { ok: false, conflict: false, detail: 'no done commit recorded for this task' };
   try {
@@ -101,9 +101,9 @@ export async function undoCheckpoint(cwd: string, entry: CheckpointEntry, runGit
   }
 }
 
-// /undo — исход виден пользователю через /log (self-NOTIFY, тот же принцип, что
-// planViolationNotify/unverifiedNotify: to:'cli', не тратит контекст оркестратора на решение,
-// которое ему не принимать).
+// /undo - the outcome is visible to the user via /log (self-NOTIFY, the same principle as
+// planViolationNotify/unverifiedNotify: to:'cli', does not waste the orchestrator context on the decision,
+// which he should not accept).
 export function undoOutcomeNotify(taskId: string, ok: boolean, detail: string): BusMessage {
   const payload: NotifyPayload = { event: ok ? 'UNDO_DONE' : 'UNDO_FAILED', details: `task ${taskId}: ${detail}` };
   return { id: randomUUID(), from: 'cli', to: 'cli', type: 'NOTIFY', ts: new Date().toISOString(), payload };

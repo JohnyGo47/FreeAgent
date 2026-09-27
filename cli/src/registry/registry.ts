@@ -1,4 +1,4 @@
-// agents_registry.json — единственный writer CLI (ARCHITECTURE §2, §4; spec_cli).
+// agents_registry.json is the only writer CLI (ARCHITECTURE §2, §4; spec_cli).
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentStatus } from '../../../shared/bus-types/index.ts';
@@ -11,12 +11,12 @@ export interface RegisteredAgent {
   status: AgentStatus;
   name?: string;
   is_backup_for?: string;
-  registered_at?: string; // ISO, для отсчёта таймаута READY при INITIALIZING (spec_init_agent)
-  attempts?: number; // recovery-попытки подряд (spec_agent_recovery), сбрасывается на успешный READY
-  service_unavailable_attempts?: number; // backoff-попытки при "unavailable" (spec_response_health), независим от attempts
-  service_down_since?: string; // ISO, момент входа в SERVICE_DOWN — точка отсчёта backoff
-  no_tags_attempts?: number; // счётчик переспросов формата (spec_response_health)
-  switching_step?: 'memory_requested' | 'activating_backup'; // фаза переключения на бэкап (spec_backup_agents)
+  registered_at?: string; // ISO, to count the READY timeout at INITIALIZING (spec_init_agent)
+  attempts?: number; // recovery attempts in a row (spec_agent_recovery), reset to successful READY
+  service_unavailable_attempts?: number; // backoff attempts when "unavailable" (spec_response_health), independent of attempts
+  service_down_since?: string; // ISO, the moment of entering SERVICE_DOWN - backoff reference point
+  no_tags_attempts?: number; // format response counter (spec_response_health)
+  switching_step?: 'memory_requested' | 'activating_backup'; // phase of switching to backup (spec_backup_agents)
 }
 
 export type AgentsRegistry = Record<string, RegisteredAgent>;
@@ -35,7 +35,7 @@ export async function saveRegistry(freeagentDir: string, registry: AgentsRegistr
   await writeFile(registryPath(freeagentDir), JSON.stringify(registry, null, 2) + '\n', 'utf8');
 }
 
-// broadcast — не адрес конкретного агента, всегда валиден.
+// broadcast is not the address of a specific agent, it is always valid.
 export function isValidAddressee(registry: AgentsRegistry, to: string): boolean {
   return to === 'broadcast' || to in registry;
 }

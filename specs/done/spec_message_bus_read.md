@@ -1,25 +1,25 @@
 # Spec: message_bus_read
-# Version: 2.1 — дедуп по id
-# Читать вместе с ARCHITECTURE.md (§4 шина)
+# Version: 2.1 — sloppy id
+# Reading with ARCHITECTURE.md (§4 tire)
 
 ## Goal
-Чтение с курсорами: читатель получает только новые сообщения, курсор переживает перезапуск.
+Reading with cursors: The reader receives only new messages., cursor undergoes restart.
 
 ## Input
-Путь/handle файла шины, `reader_id`, опциональный фильтр по `to`
+Way/handle bus-file, `reader_id`, optional `to`
 
 ## Output
-- Поток валидных `BusMessage` с позиции курсора
-- Курсор в `cursors/<reader_id>.json`: `{seq}` для главной шины, `{line}` для incoming/commands
-- Битые строки: пропущены, залогированы, курсор продвинут
+- A stream of valid `BusMessage` cursorially
+- The cursor in `cursors/<reader_id>.json`: `{seq}` main-tyre, `{line}` for incoming/commands
+- Broken lines: missed, pledged, cursor
 
 ## Constraints
-- Курсор главной шины — по `seq` (переживёт ротацию), incoming/commands — по номеру строки
-- Курсор сохраняется **после** обработки потребителем (at-least-once; обработчики идемпотентны или дедуплицируют по `id`/`seq` — `id` есть в каждом сообщении, `seq` только в главной шине)
-- Node: `fs.watch` + догоняющее чтение. Браузер: `FileSystemObserver` (Chrome/Edge) с polling fallback 2с
-- Чтение от байтового offset, не полного файла
-- Хвост без `\n` не парсить — запись ещё идёт
-- Парсинг только через `parseBusLine`, своего парсера нет
+- The main tyre cursor, `seq` (rotate), incoming/commands — line-number
+- Cursor is retained **after** consumerization (at-least-once; processors are idempotent or deduploitate by `id`/`seq` — `id` There are in every message, `seq` tyre-only)
+- Node: `fs.watch` + catch-up. browser: `FileSystemObserver` (Chrome/Edge) s polling fallback 2s
+- Reading from byte offset, half-file
+- Tailless `\n` Don't parry - the recording is still going on
+- Parsing only through `parseBusLine`, No parser of yours.
 
 ## Dependencies
 `spec_message_bus_types`, `spec_message_bus_write`
@@ -28,7 +28,7 @@
 ```typescript
 export class BusReader {
   constructor(
-    private source: BusFileSource,   // NodeFsSource | FsaSource, один интерфейс
+    private source: BusFileSource,   // NodeFsSource | FsaSource, interface
     private readerId: string,
     private filter?: (m: BusMessage) => boolean,
   ) {}
@@ -50,16 +50,16 @@ export class BusReader {
 
 ## Tests
 ### Unit
-1. Чтение с нуля — все сообщения по порядку
-2. Перезапуск читателя — продолжение с места остановки, без дублей
-3. Битая строка в середине — пропущена, следующие получены
-4. Фильтр `to` — агент получает только свои + broadcast
-5. Хвост без `\n` не отдан до появления перевода строки
-6. Дозапись во время чтения — новые сообщения долетают
+1. Reading from scratch – all messages in order
+2. Reader restart – Continuation from the stoppage, doubleless
+3. The broken line in the middle - skipped, following
+4. Filter `to` — The agent only gets his hands on his own. + broadcast
+5. Tailless `\n` Not given before the translation of the line
+6. Reading while reading – new messages fly
 
 ### Integration check
-Полный цикл с `message_bus_write`: incoming → merge → главная шина → оба типа читателей
+Complete cycle c `message_bus_write`: incoming → merge → main-tyre → both
 
 ### Definition of done
-- Тесты зелёные для обеих реализаций `BusFileSource`
-- Прогон integration check'ов предыдущих PR
+- Tests are green for both implementations `BusFileSource`
+- Run. integration check'previous PR

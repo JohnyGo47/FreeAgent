@@ -1,7 +1,7 @@
-// Определение момента завершения ответа LLM (spec_response_complete_detection). Три стратегии
-// по приоритету: typing_indicator (+ stop_button как подтверждение) > mutation debounce fallback.
-// Только content script (ARCHITECTURE §5) — здесь используется setInterval-совместимый таймер API,
-// внедряемый снаружи для тестируемости (как ensureOffscreen.ts).
+// Determine when the LLM response is completed (spec_response_complete_detection). Three strategies
+// by priority: typing_indicator (+ stop_button as confirmation) > mutation debounce fallback.
+// Content script only (ARCHITECTURE §5) - this uses the setInterval-compatible timer API,
+// injected externally for testability (like ensureOffscreen.ts).
 
 export interface MinimalElement {
   querySelector(selector: string): MinimalElement | null;
@@ -16,8 +16,8 @@ export interface ResponseWatcherDeps {
   observe(target: MinimalElement, onMutation: () => void): ObserveHandle;
   setTimeout(cb: () => void, ms: number): number;
   clearTimeout(id: number): void;
-  pollTypingIndicator(): boolean; // true пока индикатор виден
-  pollStopButton(): boolean | null; // null — нет stop_button у адаптера
+  pollTypingIndicator(): boolean; // true while the indicator is visible
+  pollStopButton(): boolean | null; // null - the adapter does not have a stop_button
   now?(): number;
 }
 
@@ -43,7 +43,7 @@ export class ResponseWatcher {
     this.hasTypingIndicator = hasTypingIndicator;
   }
 
-  // Один вызов на ответ. Возвращает промис, который резолвится при завершении.
+  // One call per response. Returns a promise that resolves when completed.
   waitForComplete(container: MinimalElement): Promise<ResponseCompleteReason> {
     this.resolved = false;
     return new Promise((resolve) => {
@@ -58,14 +58,14 @@ export class ResponseWatcher {
     });
   }
 
-  // Новый инжект во время ожидания — принудительно завершить (constraint spec).
+  // New injection while waiting - force completion (constraint spec).
   forceComplete(): void {
     this.finish('forced');
   }
 
   private watchTypingIndicator(): void {
-    // Простой поллинг индикатора (реализация DOM-наблюдения — деталь content script;
-    // здесь абстрагирована через pollTypingIndicator для тестируемости).
+    // Simple polling of the indicator (implementation of DOM monitoring - content script detail;
+    // here abstracted via pollTypingIndicator for testability).
     const tick = (): void => {
       if (this.resolved) return;
       const visible = this.deps.pollTypingIndicator();
@@ -84,7 +84,7 @@ export class ResponseWatcher {
 
   private confirmTypingIndicatorGone(): void {
     const stop = this.deps.pollStopButton();
-    if (stop === true) return; // stop-кнопка ещё видна — не доверяем indicator
+    if (stop === true) return; // the stop button is still visible - we don’t trust the indicator
     this.finish('typing_indicator');
   }
 

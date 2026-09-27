@@ -1,6 +1,6 @@
-// ROSTER UPDATE — обновление ростера оркестратора одним коротким сообщением при изменении
-// состава/статусов (spec_md_orchestrator "Ростер — формат и обновление"). Полная замена ростера —
-// только при восстановлении оркестратора из MEMORY.md (не здесь, PR-6).
+// ROSTER UPDATE - update the orchestrator roster with one short message when there is a change
+// composition/statuses (spec_md_orchestrator "Roster - format and update"). Complete replacement of the roaster -
+// only when restoring the orchestrator from MEMORY.md (not here, PR-6).
 import type { AgentsRegistry } from '../registry/registry.ts';
 import type { SkillDef } from '../skills/skills.ts';
 
@@ -37,7 +37,7 @@ export function buildRosterUpdateMessage(
   }
   for (const [agentId, entry] of prevByAgent) {
     if (!nextIds.has(agentId)) {
-      lines.push(`- ${agentId.padEnd(11)} [${entry.status}]   (удалён из ростера)`);
+      lines.push(`- ${agentId.padEnd(11)} [${entry.status}] (removed from roster)`);
     }
   }
 

@@ -1,9 +1,9 @@
-// Интеграционные тесты spec_cli_plan_mode + spec_plan_execution через настоящий runMainLoopOnce
-// (тот же стиль, что mainLoop.test.ts) — покрывает то, что не тестируется как чистая функция:
-// маршрутизация, буферизация SWITCHING (router.ts), запись на диск через FS_CALL, персистентная
-// шина. "Живой оркестратор" из Integration check обеих спек эмулируется тем, что мы сами кладём
-// в incoming ровно то, что он бы прислал (тот же приём, что REGISTER_REQUEST/FS_CALL интеграционные
-// тесты этого репозитория).
+// Integration tests spec_cli_plan_mode + spec_plan_execution via real runMainLoopOnce
+// (same style as mainLoop.test.ts) - covers what is not tested as a pure function:
+// routing, buffering SWITCHING (router.ts), writing to disk via FS_CALL, persistent
+// bus. The “live orchestrator” from the Integration check of both specs is emulated by what we ourselves put
+// in incoming exactly what he would have sent (the same technique as REGISTER_REQUEST/FS_CALL integration
+// tests of this repository).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
@@ -32,22 +32,22 @@ function baseRegistry(): AgentsRegistry {
   };
 }
 
-// spec_cli_plan_mode Test 1+2: агенты не получают TASK до APPROVED; WRITE до APPROVED -> PAUSE.
-test('plan mode: TASK оркестратора агенту и WRITE от агента до APPROVED — оба заблокированы, PAUSE + уведомление', async (t) => {
+// spec_cli_plan_mode Test 1+2: agents do not receive TASK until APPROVED; WRITE to APPROVED -> PAUSE.
+test('plan mode: TASK orchestrator to agent and WRITE from agent to APPROVED - both blocked, PAUSE + notification', async (t) => {
   const freeagentDir = await projectDir();
   t.after(() => rm(freeagentDir, { recursive: true, force: true }));
 
-  await writeFile(join(freeagentDir, 'incoming', 'browser_user.jsonl'), line('m1', 'user', 'orchestrator', 'TASK', { task_id: 't1', description: 'сделай штуку' }) + '\n', 'utf8');
+  await writeFile(join(freeagentDir, 'incoming', 'browser_user.jsonl'), line('m1', 'user', 'orchestrator', 'TASK', { task_id: 't1', description: 'do the thing' }) + '\n', 'utf8');
 
   const writer = await BusWriter.create(join(freeagentDir, 'message_bus.jsonl'));
   const state: MainLoopState = { registry: baseRegistry(), buffered: {}, cursor: 0 };
-  await runMainLoopOnce(freeagentDir, writer, state); // задача стартует, гейт -> awaiting_plan
+  await runMainLoopOnce(freeagentDir, writer, state); // task starts, gate -> awaiting_plan
   assert.equal(state.gate?.status, 'awaiting_plan');
 
-  // Оркестратор игнорирует протокол и шлёт TASK агенту напрямую, минуя план.
+  // The orchestrator ignores the protocol and sends a TASK to the agent directly, bypassing the plan.
   await writeFile(
     join(freeagentDir, 'incoming', 'browser_o.jsonl'),
-    line('m2', 'orchestrator', 'coder1', 'TASK', { task_id: 't2', description: 'просто сделай' }) + '\n',
+    line('m2', 'orchestrator', 'coder1', 'TASK', { task_id: 't2', description: 'just do it' }) + '\n',
     'utf8',
   );
   const round2 = await runMainLoopOnce(freeagentDir, writer, state);
@@ -57,7 +57,7 @@ test('plan mode: TASK оркестратора агенту и WRITE от аге
   const bus = await readFile(join(freeagentDir, 'message_bus.jsonl'), 'utf8');
   assert.match(bus, /PLAN_MODE_VIOLATION/);
 
-  // Отдельно: агент шлёт WRITE (FS_CALL) до APPROVED — тоже пауза, файл не написан.
+  // Separately: the agent sends WRITE (FS_CALL) before APPROVED - also a pause, the file has not been written.
   await writeFile(
     join(freeagentDir, 'incoming', 'browser_a.jsonl'),
     line('m3', 'coder1', 'cli', 'FS_CALL', '[FS | op: write | path: sneaky.md | kind: doc | end: ---END---]\nx\n---END---') + '\n',
@@ -68,8 +68,8 @@ test('plan mode: TASK оркестратора агенту и WRITE от аге
   await assert.rejects(readFile(join(freeagentDir, '..', 'sneaky.md'), 'utf8'));
 });
 
-// spec_cli_plan_mode Test 3: yolo пропускает гейт, TASK/WRITE проходят сразу.
-test('yolo: WRITE от агента проходит сразу, без ожидания плана', async (t) => {
+// spec_cli_plan_mode Test 3: yolo skips the gate, TASK/WRITE pass immediately.
+test('yolo: WRITE from the agent occurs immediately, without waiting for a plan', async (t) => {
   const freeagentDir = await projectDir();
   t.after(() => rm(freeagentDir, { recursive: true, force: true }));
   await writeFile(join(freeagentDir, 'freeagent.config.json'), JSON.stringify({ mode: 'yolo' }), 'utf8');
@@ -86,14 +86,14 @@ test('yolo: WRITE от агента проходит сразу, без ожид
     'utf8',
   );
   const round = await runMainLoopOnce(freeagentDir, writer, state);
-  assert.equal(round.commands.some((c) => c.message.type === 'COMMAND'), false); // никакого PAUSE
+  assert.equal(round.commands.some((c) => c.message.type === 'COMMAND'), false); // no PAUSE
   const written = await readFile(join(freeagentDir, '..', 'fast.md'), 'utf8');
   assert.equal(written, 'hi');
 });
 
-// spec_plan_execution Test 4/5 (общий код с orchestrator/plan.test.ts, задача A.6/B.8): невалидный
-// план возвращается оркестратору ДО показа пользователю, не выполняется частично.
-test('план с циклом или несуществующим agent_id: retry оркестратору, гейт не доходит до plan_ready', async (t) => {
+// spec_plan_execution Test 4/5 (shared code with orchestrator/plan.test.ts, task A.6/B.8): invalid
+// the plan is returned to the orchestrator BEFORE being shown to the user; it is not partially executed.
+test('plan with a loop or non-existent agent_id: retry to orchestrator, gate does not reach plan_ready', async (t) => {
   const freeagentDir = await projectDir();
   t.after(() => rm(freeagentDir, { recursive: true, force: true }));
 
@@ -107,17 +107,17 @@ test('план с циклом или несуществующим agent_id: ret
   const round = await runMainLoopOnce(freeagentDir, writer, state);
 
   assert.notEqual(state.gate?.status, 'plan_ready');
-  assert.equal(state.gate?.status, 'awaiting_plan'); // 1-я неудача — retry, не сдача
-  assert.equal(round.commands.length, 0); // ничего не ушло агентам — план не начал исполняться
+  assert.equal(state.gate?.status, 'awaiting_plan'); // 1st failure - retry, not passing
+  assert.equal(round.commands.length, 0); // nothing went to the agents - the plan did not begin to be executed
   const bus = await readFile(join(freeagentDir, 'message_bus.jsonl'), 'utf8');
   assert.match(bus, /"command":"REPLAN"/);
 });
 
-// spec_plan_execution Test 7: RESULT:FAILED -> эскалация с текстом ошибки, зависимые шаги не
-// стартуют. planExecution.test.ts проверяет applyResult() как чистую функцию; здесь — что
-// mainLoop.ts реально перехватывает RESULT на шине, реально пишет escalationNotify на диск
-// (не просто вызывает функцию) и реально НЕ отправляет TASK шага 2 на следующем тике.
-test('RESULT: FAILED через реальный тик mainLoop — escalationNotify на шине, зависимый шаг 2 не отправлен', async (t) => {
+// spec_plan_execution Test 7: RESULT:FAILED -> escalation with error text, dependent steps not
+// start. planExecution.test.ts tests applyResult() as a pure function; here - what
+// mainLoop.ts actually intercepts RESULT on the bus, actually writes escalationNotify to disk
+// (doesn't just call the function) and actually DOES NOT send the TASK of step 2 on the next tick.
+test('RESULT: FAILED via real tick mainLoop - escalationNotify on bus, dependent step 2 not dispatched', async (t) => {
   const freeagentDir = await projectDir();
   t.after(() => rm(freeagentDir, { recursive: true, force: true }));
 
@@ -128,8 +128,8 @@ test('RESULT: FAILED через реальный тик mainLoop — escalationN
 
   const linearPlan = [
     '[PLAN]',
-    'STEP 1 | coder1 | шаг 1 | FILES: a.ts | DEPENDS: none',
-    'STEP 2 | coder1 | шаг 2 | FILES: b.ts | DEPENDS: 1',
+    'STEP 1 | coder1 | step 1 | FILES: a.ts | DEPENDS: none',
+    'STEP 2 | coder1 | step 2 | FILES: b.ts | DEPENDS: 1',
     '[/PLAN]',
   ].join('\n');
   await writeFile(join(freeagentDir, 'incoming', 'browser_o.jsonl'), line('m2', 'orchestrator', 'cli', 'PLAN', linearPlan) + '\n', 'utf8');
@@ -141,7 +141,7 @@ test('RESULT: FAILED через реальный тик mainLoop — escalationN
   state.gate = approvePlan(state.gate!);
   state.execution = startExecution(state.gate.plan!);
 
-  const round1 = await runMainLoopOnce(freeagentDir, writer, state); // шаг 1 уходит coder1
+  const round1 = await runMainLoopOnce(freeagentDir, writer, state); // step 1 leaves coder1
   const step1Task = round1.commands.find((c) => c.message.type === 'TASK');
   assert.ok(step1Task);
   const step1TaskId = (step1Task!.message.payload as { task_id: string }).task_id;
@@ -151,36 +151,36 @@ test('RESULT: FAILED через реальный тик mainLoop — escalationN
     line('r1', 'coder1', 'orchestrator', 'RESULT', { task_id: step1TaskId, status: 'FAILED', summary: 'stack trace: TypeError boom' }) + '\n',
     'utf8',
   );
-  const round2 = await runMainLoopOnce(freeagentDir, writer, state); // RESULT:FAILED обработан на реальном тике
-  assert.equal(round2.commands.some((c) => c.message.type === 'TASK'), false); // шаг 2 не уходит этим тиком
+  const round2 = await runMainLoopOnce(freeagentDir, writer, state); // RESULT:FAILED processed on a real tick
+  assert.equal(round2.commands.some((c) => c.message.type === 'TASK'), false); // step 2 does not go away with this tick
 
-  // escalationNotify пишется через writer.mergeOnce (тот же приём, что ERROR/остальные toBus в
-  // этом файле) — появляется в файле шины, но раунд, который его породил, ещё не читал этот файл
-  // заново, поэтому реальная маршрутизация оркестратору видна на СЛЕДУЮЩЕМ тике.
+  // escalationNotify is written via writer.mergeOnce (the same technique as ERROR/other toBus in
+  // this file) - appears in the bus file, but the round that spawned it has not yet read this file
+  // again, so the real routing is visible to the orchestrator at the NEXT tick.
   const round3 = await runMainLoopOnce(freeagentDir, writer, state);
-  assert.equal(round3.commands.some((c) => c.message.type === 'TASK'), false, 'шаг 2 зависит от заваленного шага 1 и не открывается никогда');
+  assert.equal(round3.commands.some((c) => c.message.type === 'TASK'), false, 'step 2 depends on failed step 1 and never opens');
   const delivered = round3.commands.find((c) => c.message.type === 'NOTIFY' && c.instanceId === 'browser_o');
-  assert.ok(delivered, 'эскалация реально доставлена в commands/<instance оркестратора>, не только легла на шину');
+  assert.ok(delivered, 'the escalation was actually delivered to commands/<instance of the orchestrator>, not just on the bus');
   assert.match((delivered!.message.payload as { details: string }).details, /TypeError boom/);
 
   await appendCommands(freeagentDir, round3.commands);
   const commandsFile = await readFile(join(freeagentDir, 'commands', 'browser_o.jsonl'), 'utf8');
   assert.match(commandsFile, /PLAN_ESCALATION/);
 
-  // Ничего не осталось недоставленным / не зациклилось — следующий тик тих.
+  // Nothing left undelivered / looped - the next tick is silent.
   const round4 = await runMainLoopOnce(freeagentDir, writer, state);
   assert.equal(round4.commands.length, 0);
 });
 
-// spec_plan_execution Integration check: план на 4 шага с двумя параллельными ветками ->
-// полное исполнение без участия оркестратора в процессе -> ровно один NOTIFY (PLAN_COMPLETE).
-// Заодно покрывает Test 9 (SWITCHING -> очередь -> доставка после READY, остальные ветки идут).
-test('integration: план на 4 шага с двумя параллельными ветками — полностью исполняется, оркестратор получает только PLAN_COMPLETE; агент в SWITCHING получает задачу в очередь', async (t) => {
+// spec_plan_execution Integration check: 4-step plan with two parallel branches ->
+// full execution without orchestrator participation in the process -> exactly one NOTIFY (PLAN_COMPLETE).
+// At the same time covers Test 9 (SWITCHING -> queue -> delivery after READY, other branches are in progress).
+test('integration: 4-step plan with two parallel branches - fully executed, orchestrator receives only PLAN_COMPLETE; agent in SWITCHING receives task in queue', async (t) => {
   const freeagentDir = await projectDir();
   t.after(() => rm(freeagentDir, { recursive: true, force: true }));
 
   const registry = baseRegistry();
-  registry.coder2.status = 'SWITCHING'; // задача B.12 / Test 9: переходный статус на старте
+  registry.coder2.status = 'SWITCHING'; // task B.12 / Test 9: transitional status at start
 
   await writeFile(join(freeagentDir, 'incoming', 'browser_user.jsonl'), line('m1', 'user', 'orchestrator', 'TASK', { task_id: 't1', description: 'go' }) + '\n', 'utf8');
   const writer = await BusWriter.create(join(freeagentDir, 'message_bus.jsonl'));
@@ -189,39 +189,39 @@ test('integration: план на 4 шага с двумя параллельны
 
   const plan4 = [
     '[PLAN]',
-    'STEP 1 | coder1 | ветка A шаг 1 | FILES: a1.ts | DEPENDS: none',
-    'STEP 2 | coder1 | ветка A шаг 2 | FILES: a2.ts | DEPENDS: 1',
-    'STEP 3 | coder2 | ветка B шаг 1 | FILES: b1.ts | DEPENDS: none',
-    'STEP 4 | coder2 | ветка B шаг 2 | FILES: b2.ts | DEPENDS: 3',
+    'STEP 1 | coder1 | branch A step 1 | FILES: a1.ts | DEPENDS: none',
+    'STEP 2 | coder1 | branch A step 2 | FILES: a2.ts | DEPENDS: 1',
+    'STEP 3 | coder2 | branch B step 1 | FILES: b1.ts | DEPENDS: none',
+    'STEP 4 | coder2 | branch B step 2 | FILES: b2.ts | DEPENDS: 3',
     '[/PLAN]',
   ].join('\n');
   await writeFile(join(freeagentDir, 'incoming', 'browser_o.jsonl'), line('m2', 'orchestrator', 'cli', 'PLAN', plan4) + '\n', 'utf8');
   await runMainLoopOnce(freeagentDir, writer, state);
   assert.equal(state.gate?.status, 'plan_ready');
 
-  // [Enter] в TUI: approvePlan + запуск исполнения (та же последовательность, что делает bin.ts).
+  // [Enter] in TUI: approvePlan + start execution (same sequence as bin.ts).
   const { approvePlan } = await import('./planMode.ts');
   const { startExecution } = await import('./planExecution.ts');
   state.gate = approvePlan(state.gate!);
   state.execution = startExecution(state.gate.plan!);
 
-  // Тик: шаг 1 (coder1, IDLE) уходит сразу; шаг 3 (coder2, SWITCHING) — в очередь router.ts, не в commands.
+  // Tick: step 1 (coder1, IDLE) goes away immediately; step 3 (coder2, SWITCHING) - to the router.ts queue, not to commands.
   let round = await runMainLoopOnce(freeagentDir, writer, state);
   assert.equal(round.commands.filter((c) => c.message.type === 'TASK').length, 1);
   assert.equal(round.commands[0].instanceId, 'browser_a');
-  assert.ok(state.buffered.coder2?.length === 1, 'шаг 3 ждёт в очереди buffered, пока coder2 не READY');
+  assert.ok(state.buffered.coder2?.length === 1, 'step 3 waits in buffered queue until coder2 is READY');
 
   const step1TaskId = (round.commands.find((c) => c.message.type === 'TASK')!.message.payload as { task_id: string }).task_id;
   await writeFile(join(freeagentDir, 'incoming', 'browser_a.jsonl'), line('r1', 'coder1', 'orchestrator', 'RESULT', { task_id: step1TaskId, status: 'DONE', summary: 'done' }) + '\n', 'utf8');
-  round = await runMainLoopOnce(freeagentDir, writer, state); // шаг 1 закрыт -> шаг 2 уходит coder1
+  round = await runMainLoopOnce(freeagentDir, writer, state); // step 1 is closed -> step 2 leaves coder1
   const step2Task = round.commands.find((c) => c.message.type === 'TASK');
-  assert.ok(step2Task, 'ветка A продолжается независимо от того, что ветка B ждёт SWITCHING');
+  assert.ok(step2Task, 'branch A continues regardless of the fact that branch B is waiting for SWITCHING');
   assert.equal(step2Task!.message.to, 'coder1');
 
-  // coder2 наконец готов — READY снимает SWITCHING и разом флашит очередь (шаг 3).
+  // coder2 is finally ready - READY removes SWITCHING and flushes the queue at once (step 3).
   await writeFile(join(freeagentDir, 'incoming', 'browser_b.jsonl'), line('ready2', 'coder2', 'cli', 'READY') + '\n', 'utf8');
   round = await runMainLoopOnce(freeagentDir, writer, state);
-  assert.equal(round.commands.some((c) => c.message.type === 'TASK' && c.message.to === 'coder2'), true, 'шаг 3 доставлен сразу после READY');
+  assert.equal(round.commands.some((c) => c.message.type === 'TASK' && c.message.to === 'coder2'), true, 'step 3 delivered immediately after READY');
   assert.equal(state.buffered.coder2, undefined);
 
   const step2TaskId = (step2Task!.message.payload as { task_id: string }).task_id;
@@ -229,7 +229,7 @@ test('integration: план на 4 шага с двумя параллельны
 
   await writeFile(join(freeagentDir, 'incoming', 'browser_a.jsonl'), line('r2', 'coder1', 'orchestrator', 'RESULT', { task_id: step2TaskId, status: 'DONE', summary: 'done' }) + '\n', 'utf8');
   await writeFile(join(freeagentDir, 'incoming', 'browser_b.jsonl'), line('r3', 'coder2', 'orchestrator', 'RESULT', { task_id: step3TaskId, status: 'DONE', summary: 'done' }) + '\n', 'utf8');
-  round = await runMainLoopOnce(freeagentDir, writer, state); // ветка A завершена; ветка B открывает шаг 4
+  round = await runMainLoopOnce(freeagentDir, writer, state); // branch A is completed; branch B opens step 4
   const step4Task = round.commands.find((c) => c.message.type === 'TASK' && c.message.to === 'coder2');
   assert.ok(step4Task);
 
@@ -237,11 +237,11 @@ test('integration: план на 4 шага с двумя параллельны
   await writeFile(join(freeagentDir, 'incoming', 'browser_b.jsonl'), line('r4', 'coder2', 'orchestrator', 'RESULT', { task_id: step4TaskId, status: 'DONE', summary: 'done' }) + '\n', 'utf8');
   await runMainLoopOnce(freeagentDir, writer, state);
 
-  assert.equal(state.execution, undefined, 'план завершён и очищен');
+  assert.equal(state.execution, undefined, 'plan completed and cleared');
   assert.equal(state.gate?.status, 'idle');
 
   const bus = await readFile(join(freeagentDir, 'message_bus.jsonl'), 'utf8');
   const notifyToOrchestrator = bus.split('\n').filter((l) => l.includes('"type":"NOTIFY"') && l.includes('"to":"orchestrator"'));
-  assert.equal(notifyToOrchestrator.length, 1, 'на счастливом пути ровно одно сообщение оркестратору — PLAN_COMPLETE');
+  assert.equal(notifyToOrchestrator.length, 1, 'on the happy path there is exactly one message to the orchestrator - PLAN_COMPLETE');
   assert.match(notifyToOrchestrator[0], /PLAN_COMPLETE/);
 });

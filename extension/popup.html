@@ -1,11 +1,40 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
+    <style>
+      body { font: 13px system-ui, sans-serif; margin: 14px; min-width: 310px; color: #202124; }
+      h1 { font-size: 16px; margin: 0 0 12px; }
+      .row { display: flex; gap: 8px; margin: 8px 0; }
+      button, select { min-height: 32px; border: 1px solid #c7c7c7; border-radius: 6px; background: white; padding: 5px 9px; }
+      button { cursor: pointer; }
+      button.primary { background: #1967d2; border-color: #1967d2; color: white; flex: 1; }
+      select { flex: 1; }
+      #status { margin-top: 10px; line-height: 1.35; color: #5f6368; }
+      #status.ok { color: #137333; }
+      #status.error { color: #b3261e; }
+      .hint { margin: -3px 0 8px; color: #5f6368; font-size: 12px; }
+      [hidden] { display: none !important; }
+    </style>
   </head>
   <body>
-    <button id="pick-folder">Выбрать папку проекта</button>
-    <button id="restore-access" style="display:none">Восстановить доступ</button>
+    <h1>FreeAgent</h1>
+    <div class="hint">Select the project root, for example: ...\FreeAgent_Beta</div>
+    <div class="row">
+      <button id="pick-folder">Select project folder</button>
+      <button id="restore-access" hidden>Restore access</button>
+    </div>
+    <div class="row">
+      <select id="role" aria-label="Agent role">
+        <option value="orchestrator">orchestrator</option>
+        <option value="coder">coder</option>
+        <option value="researcher">researcher</option>
+        <option value="reviewer">reviewer</option>
+        <option value="tester">tester</option>
+      </select>
+      <button id="register-tab" class="primary">Add tab</button>
+    </div>
+    <div id="status" role="status"></div>
     <script src="popup.js"></script>
   </body>
 </html>

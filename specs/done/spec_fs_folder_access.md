@@ -1,17 +1,17 @@
-# Spec: fs_folder_access
+# Spec: fs folder access
 # Version: 2.0
-# Читать вместе с ARCHITECTURE.md (§4 структура шины)
+# Read with ARCHITECTURE.md (§4 bus structure)
 
-## Goal
-Доступ расширения к папке проекта через FSA, персистентность разрешения между сессиями, идемпотентное создание служебной структуры.
+#Goal
+Access to the extension to the project folder through the FSA, persistence of the resolution between sessions, idempotent creation of the service structure.
 
-## Input
-- Клик пользователя (`showDirectoryPicker()` требует user gesture — ограничение платформы)
-- IndexedDB расширения
+#Input
+User Click (`showDirectoryPicker()` requires user gesture)
+- IndexedDB expansion
 
-## Output
-- `FileSystemDirectoryHandle` корня, доступный всем модулям через единый сервис
-- Структура:
+#Output
+`FileSystemDirectoryHandle` root, available to all modules through a single service
+- Structure:
 ```
 /freeagent/
   message_bus.jsonl
@@ -26,15 +26,13 @@
   memory/             ← <agent_id>.md
   skills/
   logs/
-```
-
-## Constraints
-- Handle сохраняется **в IndexedDB** — единственное хранилище, переживающее рестарт браузера для FSA-handles. `chrome.storage` их не умеет
-- При старте: `queryPermission({mode:'readwrite'})` → `'prompt'` → кнопка «Восстановить доступ» → `requestPermission()` по клику
-- Создание структуры идемпотентно, существующие файлы не перезаписываются
-- Все модули получают handle через `FolderAccessService` — никто не вызывает picker самостоятельно
-- Доступ отозван во время работы → типизированная ошибка `FolderAccessLost`, `NOTIFY`, баннер в UI
-- `showDirectoryPicker` доступен из popup/options/offscreen, **не из service worker**
+```##Constraints
+Handle is saved **in IndexedDB** - the only storage experiencing a browser restart for FSA-handles. `chrome.storage` doesn't know how to do it.
+- At launch: `queryPermission({mode:'readwrite'})` → `'prompt'` → “Restore access” button → `requestPermission()` by click
+Creating a structure is idempotent, existing files are not overwritten
+All modules receive handle via `FolderAccessService` – no one calls the picker on their own
+- Access withdrawn during operation → typed error `FolderAccessLost`, `NOTIFY`, banner in UI
+- `showDirectoryPicker` is available from popup/options/offscreen, **not from service worker**
 
 ## Dependencies
 `spec_ext_manifest`
@@ -43,31 +41,30 @@
 ```typescript
 class FolderAccessService {
   private handle: FileSystemDirectoryHandle | null = null;
-  async pickFolder(): Promise<void> {           // только из user gesture
+  async pickFolder(): Promise<void> {           // only user gesture
     this.handle = await window.showDirectoryPicker({ mode: 'readwrite' });
     await idbSet('projectRoot', this.handle);
     await this.ensureStructure();
   }
   async restore(): Promise<'granted' | 'prompt' | 'none'> { /* ... */ }
-  async ensureStructure(): Promise<void> { /* идемпотентно */ }
-  root(): FileSystemDirectoryHandle { /* throw FolderAccessLost если null */ }
+  async ensureStructure(): Promise<void> { /* idempotently */ }
+  root(): FileSystemDirectoryHandle { /* throw FolderAccessLost if null */ }
 }
-```
-`resolvePath(root, "incoming/browser_a1b2c3.jsonl")` — последовательные `getDirectoryHandle`/`getFileHandle`, `{create:true}` только для служебных файлов.
+````resolvePath(root, "incoming/browser_a1b2c3.jsonl")` is a series of `getDirectoryHandle`/`getFileHandle`, `{create:true}` for service files only.
 
 ## Tests
-### Unit
-1. `ensureStructure` на пустой папке создаёт всё дерево; повторный вызов не перезаписывает
-2. `restore` без сохранённого handle → `'none'`
-3. `restore` при `granted` → сервис готов без диалога
-4. Операция при отозванном доступе → `FolderAccessLost`, не generic exception
-5. `resolvePath` создаёт поддиректории только при `create:true`
-6. Все 12 позиций структуры создаются
+################################################################################################################################################################################################################################################################
+1. `ensureStructure` creates the entire tree on an empty folder; a re-call does not overwrite
+2. `restore` without saved handle → `'none'`
+3. `restore` at `granted` service is ready without dialogue
+4. `FolderAccessLost`, not generic exception
+5. `resolvePath` creates subdirectories only with `create:true`
+6. All 12 positions of the structure are created
 
-### Integration check
-Выбрать папку → перезапустить браузер → доступ восстановлен максимум в один клик → запись в incoming работает
+###Integration check
+Select folder → restart browser → access restored in a maximum of one click → entry in incoming works
 
-### Definition of done
-- Тесты зелёные, ручная проверка в Chrome
-- Ни один модуль не обращается к FSA мимо `FolderAccessService`
-- Прогон integration check'ов предыдущих PR
+###Definition of done
+Tests are green, manual check in Chrome
+No module addresses the FSA past `FolderAccessService`
+- Run integration checks of previous PR

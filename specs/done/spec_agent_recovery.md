@@ -1,38 +1,38 @@
 # Spec: agent_recovery
-# Version: 3.0 — реактивный, без таймаутов
-# Читать вместе с ARCHITECTURE.md (§6 наблюдение, §16 ограничение по кросс-браузерности)
+# Version: 3.0 - reactive, no timeouts
+# Read along with ARCHITECTURE.md (§6 observation, §16 cross-browser limitation)
 
 ## Changelog
-v2.x строилась на heartbeat-таймауте (150с молчания = агент упал). Heartbeat от LLM убран — модель не шлёт сообщений по своей инициативе, здоровый ждущий агент считался бы мёртвым. Теперь состояние вкладки наблюдается напрямую через `chrome.tabs`, реакция реактивная.
+v2.x was built on a heartbeat timeout (150s of silence = agent fell). Heartbeat from LLM has been removed - the model does not send messages on its own initiative, a healthy waiting agent would be considered dead. Now the tab state is observed directly through `chrome.tabs`, the reaction is reactive.
 
 ## Goal
-Расширение видит, что вкладка агента мертва → сообщает `TAB_STATE` → CLI решает → команда на восстановление → агент переинициализирован под тем же `agent_id`.
+The extension sees that the agent tab is dead → reports `TAB_STATE` → CLI decides → command to restore → agent is reinitialized under the same `agent_id`.
 
 ## Input
-- `TAB_STATE` от расширения: `closed` | `wrong_domain` | `selectors_broken`
+- `TAB_STATE` from extension: `closed` | `wrong_domain` | `selectors_broken`
 - `agents_registry.json`: `agent_id`, `role`, `llm_url`, `md_path`, `instance_id`, `tab_id`, `status`, `attempts`
-- `MEMORY.md` агента, если есть
+- `MEMORY.md` agent, if available
 
 ## Output
-- CLI → `COMMAND: RECOVER_AGENT` в `commands/<instance_id>.jsonl`
-- Расширение: новая вкладка + инжект роли и `RECOVERY CONTEXT`
-- После `READY`: статус `IDLE`, `NOTIFY: AGENT_RECOVERED`, задачи из очереди доставлены
+- CLI → `COMMAND: RECOVER_AGENT` in `commands/<instance_id>.jsonl`
+- Extension: new tab + role injection and `RECOVERY CONTEXT`
+- After `READY`: status `IDLE`, `NOTIFY: AGENT_RECOVERED`, tasks from the queue have been delivered
 
 ## Constraints
-- **Нет таймеров детектирования** — расширение сообщает об изменении состояния вкладки
-- Максимум 3 попытки подряд → `FAILED`, `NOTIFY`, задачи агента остановлены
-- Не восстанавливать в статусах `SWITCHING`, `SERVICE_DOWN`, `STANDBY`, `FAILED`
-- **Кросс-браузерное восстановление невозможно** (ARCHITECTURE §16.1): команда идёт в инстанс, где агент был зарегистрирован. Если тот браузер закрыт — команда ждёт в файле, `NOTIFY` пользователю
-- Задачи, адресованные агенту вне `IDLE`/`WORKING` (в переходном статусе), **буферизуются CLI** и доставляются после `READY`
-- `llm_url` недоступен (нет сети) → сразу `FAILED`, попытки не тратятся
-- Переиспользует `initializeAgent` из `spec_init_agent` — процедура не дублируется
+- **No detection timers** - the extension reports changes in the tab state
+- Maximum 3 attempts in a row → `FAILED`, `NOTIFY`, agent tasks stopped
+- Do not restore in `SWITCHING`, `SERVICE_DOWN`, `STANDBY`, `FAILED` statuses
+- **Cross-browser recovery is not possible** (ARCHITECTURE §16.1): the command goes to the instance where the agent was registered. If that browser is closed, the command waits in the file, `NOTIFY` to the user
+- Tasks addressed to an agent outside of `IDLE`/`WORKING` (in transitional status) are **buffered by the CLI** and delivered after `READY`
+- `llm_url` is unavailable (no network) → immediately `FAILED`, no attempts are wasted
+- Reuses `initializeAgent` from `spec_init_agent` - the procedure is not duplicated
 
 ## Dependencies
 `spec_message_bus_types`, `spec_message_bus_read`, `spec_init_agent`, `spec_md_memory_template`
 
 ## Implementation notes
 ```typescript
-// CLI — реакция на TAB_STATE, без опроса
+// CLI - reaction to TAB_STATE, without polling
 onBusMessage('TAB_STATE', async (msg) => {
   const { agent_id, state } = msg.payload as TabStatePayload;
   if (state === 'alive') return;
@@ -44,22 +44,22 @@ onBusMessage('TAB_STATE', async (msg) => {
 });
 ```
 
-Промпт восстановления — тег-текст (слой перевода), содержит полный MD роли + блок `[RECOVERY CONTEXT]` с MEMORY.md либо пометкой о его отсутствии.
+The recovery prompt is a text tag (translation layer), containing the full MD of the role + the `[RECOVERY CONTEXT]` block with MEMORY.md or a note about its absence.
 
 ## Tests
 ### Unit
-1. `TAB_STATE: closed` → команда восстановления отправлена немедленно, без ожидания таймаута
-2. Recovery не триггерится в статусах `SWITCHING`, `SERVICE_DOWN`, `STANDBY`, `FAILED`
-3. После 3 попыток — `FAILED` + `NOTIFY`
-4. Агент с MEMORY.md получает RECOVERY CONTEXT; без него — базовый промпт
-5. Задача, отправленная агенту в `INITIALIZING`, буферизуется и доставляется после `READY`
-6. Команда для закрытого браузера остаётся в файле, пользователь уведомлён
-7. В коде расширения нет `setInterval` в модулях recovery (grep в CI)
+1. `TAB_STATE: closed` → restore command sent immediately, without waiting for a timeout
+2. Recovery is not triggered in the `SWITCHING`, `SERVICE_DOWN`, `STANDBY`, `FAILED` statuses
+3. After 3 attempts - `FAILED` + `NOTIFY`
+4. The agent with MEMORY.md receives RECOVERY CONTEXT; without it - basic prompt
+5. The task sent to the agent in `INITIALIZING` is buffered and delivered after `READY`
+6. The command for the closed browser remains in the file, the user is notified
+7. The extension code does not have `setInterval` in recovery modules (grep in CI)
 
 ### Integration check
-Закрыть вкладку агента вручную → команда ушла на ближайшем тике `chrome.alarms` → агент ответил `READY` → буферизованная задача доставлена
+Close the agent tab manually → the command left on the nearest tick `chrome.alarms` → the agent responded `READY` → the buffered task was delivered
 
 ### Definition of done
-- Тесты зелёные, ручная проверка на 2 разных LLM
-- Вся логика решений в CLI; расширение только сообщает состояние и исполняет команды
-- Прогон integration check'ов предыдущих PR
+- Tests are green, manual check on 2 different LLMs
+- All decision logic in the CLI; the extension only reports state and executes commands
+- Running integration checks of previous PRs

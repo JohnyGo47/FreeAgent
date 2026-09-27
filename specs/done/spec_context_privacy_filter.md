@@ -1,27 +1,27 @@
-# Spec: context_privacy_filter
+# Spec: context privacy filter
 # Version: 1.0
-# Читать вместе с ARCHITECTURE.md (§11, §6)
+# Read with ARCHITECTURE.md (§11, §6)
 
-## Goal
-Секреты из проекта пользователя не уходят в контекст бесплатных LLM. Фильтр применяется на чтении (перед отправкой содержимого агенту) и на записи дерева проекта (перед отправкой оркестратору).
+#Goal
+The secrets of the user’s project do not go into the context of free LLMs. The filter is used for reading (before sending the content to the agent) and for recording the project tree (before sending it to the orchestrator).
 
-## Input
-- содержимое файла, запрошенного агентом через READ
-- дерево проекта, отправляемое оркестратору
-- exclude-конфиг `.freeagentignore` + встроенные правила
+#Input
+The contents of the file requested by the agent through READ
+Project tree sent to the orchestrator
+- exclude-config `.freeagentignore` + built-in rules
 
-## Output
-- отфильтрованное содержимое: секретные значения заменены на `[REDACTED]`
-- отфильтрованное дерево: исключённые файлы не видны
-- warning в CLI при каждом срабатывании (пользователь знает, что фильтр работал)
+#Output
+Filtered content: secret values replaced by `[REDACTED]`
+Filtered tree: Excluded files are not visible
+CLI warning at each operation (user knows the filter is working)
 
-## Contract
+##Contract ##
 
-### Два слоя фильтрации
+### Two layers of filtration
 
-**Слой 1 — исключение файлов целиком.** Файл не отправляется агенту и не виден в дереве.
+*Layer 1 – exclude files entirely.** The file is not sent to the agent or seen in the tree.
 
-Встроенный список (нередактируемый):
+Built-in list (unedited):
 ```
 .env
 .env.*
@@ -31,56 +31,52 @@
 *.pfx
 id_rsa*
 id_ed25519*
-.npmrc (если содержит _authToken)
+.npmrc (if _authToken)
+```User `.freeagentignore` (`.gitignore` format):
 ```
-
-Пользовательский `.freeagentignore` (формат `.gitignore`):
-```
-# пример
+# case
 secrets/
 config/production.yaml
 *.credentials
-```
+```**Layer 2 – masking inside permitted files.**Secret-like lines are replaced with `[REDACTED: <type>]`.
 
-**Слой 2 — маскирование внутри разрешённых файлов.** Строки, похожие на секреты, заменяются на `[REDACTED: <тип>]`.
+Patterns (regular expressions):
+API keys: strings of the form `sk-`, `pk_`, `AKIA`, `ghp_`, `glpat-`, long base64 blocks after `=` or `:`
+- connection strings: `postgres://`, `mysql://`, `mongodb://`, `redis://` with credentials
+- bearer tokens: `Bearer <token>`
+- environment variables: `process.env.SECRET_NAME` → name visible, no value (no value in code, but `.env` - yes)
 
-Паттерны (регулярные выражения):
-- API-ключи: строки вида `sk-`, `pk_`, `AKIA`, `ghp_`, `glpat-`, длинные base64-блоки после `=` или `:`
-- connection strings: `postgres://`, `mysql://`, `mongodb://`, `redis://` с credentials
-- bearer-токены: `Bearer <token>`
-- значения переменных окружения: `process.env.SECRET_NAME` → имя видно, значение нет (значение в коде отсутствует, но в `.env` — да)
+##### What's NOT filtered
+File and variable names (the agent needs to know that `DATABASE_URL` exists to use it by name)
+Test/fake data (there is no reliable way to distinguish `test_key_123` from the real key – false positives are permissible, it is better to be safe)
+Code – only what looks like a secret ** value** is filtered, not like a language construct.
 
-### Что НЕ фильтруется
-- Имена файлов и переменных (агенту нужно знать, что `DATABASE_URL` существует, чтобы использовать его по имени)
-- Тестовые/фейковые данные (нет надёжного способа отличить `test_key_123` от настоящего ключа — ложные срабатывания допустимы, лучше перестраховаться)
-- Код — фильтруется только то, что выглядит как секретное **значение**, не как конструкция языка
-
-## Constraints
-- Фильтр выполняется **в CLI** перед отправкой содержимого в шину — единственная точка
-- Фильтр **не** применяется к записи на диск (`WRITE`) — агент пишет что хочет, это его код
-- `.freeagentignore` читается при старте CLI и при изменении (fs.watch)
-- При отсутствии `.freeagentignore` — работают только встроенные правила
-- Ложное срабатывание лучше пропуска: если сомнительно — маскировать, пользователь увидит warning
-- Для опенсорс-проекта это **репутационное требование №1** — утечка ключей через бесплатный LLM-сервис = потерянное доверие
+##Constraints
+- The filter is executed **in CLI** before sending the contents to the bus - single point
+The filter **n** applies to write to disk (`WRITE`) - the agent writes what he wants, it is his code.
+`.freeagentignore` is read at the start of the CLI and when changed (fs.watch)
+In the absence of `.freeagentignore`, only the built-in rules work.
+False positive is better than a pass: if doubtful – to mask, the user will see a warning
+- For opensource project, this is **reputation requirement #1** - leaking keys through a free LLM service = lost trust
 
 ## Dependencies
-`spec_file_access` (фильтр вызывается при обработке READ), `spec_cli`
+`spec_file_access` (filter called during READ processing), `spec_cli`
 
 ## Tests
-### Unit
-1. `.env` с `DATABASE_URL=postgres://user:pass@host/db` → файл целиком исключён из READ
-2. `config.ts` с `const API_KEY = "sk-abc123..."` → `[REDACTED: api_key]`, остальной код нетронут
-3. `config.ts` с `const API_KEY = process.env.API_KEY` → не фильтруется (нет значения)
-4. `.freeagentignore` с `secrets/` → файлы в `secrets/` не видны в дереве и недоступны по READ
-5. Дерево проекта: `.env` и `*.pem` отсутствуют в выводе
-6. Warning в CLI при каждом срабатывании (файл X отфильтрован / N строк замаскировано)
-7. Без `.freeagentignore` → встроенные правила работают
-8. `test.env.example` с `DATABASE_URL=your_url_here` → маскируется (лучше перестраховаться)
+################################################################################################################################################################################################################################################################
+1. `.env` with `DATABASE_URL=postgres://user:pass@host/db` → the entire file is excluded from READ
+2. `config.ts` with `const API_KEY = "sk-abc123..."` → `[REDACTED: api_key]`, the rest of the code is intact
+3. `config.ts` with `const API_KEY = process.env.API_KEY` → not filtered (no matter)
+4. `.freeagentignore` with `secrets/` → files in `secrets/` are not visible in the tree and are not available on READ
+5. Project tree: `.env` and `*.pem` are missing in the output
+6. Warning in CLI at each trigger (X file filtered/N lines masked)
+7. Without `.freeagentignore`, the built-in rules work
+8. `test.env.example` with `DATABASE_URL=your_url_here` → masked (better be safe)
 
-### Integration check
-Проект с `.env`, `secrets/api.key`, `src/config.ts` (содержит API-ключ) → агент делает READ на каждый → `.env` отклонён, `api.key` отклонён, `config.ts` получен с `[REDACTED]`, CLI показал 3 warning'а
+###Integration check
+Project with `.env`, `secrets/api.key`, `src/config.ts` (contains an API key) → agent makes a READ on each → `.env` rejected, `api.key` rejected, `config.ts` obtained from `[REDACTED]`, CLI showed 3 warning
 
-### Definition of done
-- Тесты зелёные
-- Ни один секрет не попал в incoming/шину при штатной работе
-- Прогон integration check'ов предыдущих PR
+###Definition of done
+- The tests are green.
+No secret got into the incoming/tyre during regular work
+- Run integration checks of previous PR

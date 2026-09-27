@@ -1,72 +1,72 @@
 # Spec: skills_system
-# Version: 1.0 — НОВАЯ
-# Читать вместе с ARCHITECTURE.md (§14 роли и скиллы, §8 ростер)
+# Version: 1.0 — NEW
+# Reading with ARCHITECTURE.md (§14 role, §8 roster)
 
 ## Goal
-Роли как MD-файлы в `/skills/`. Пользователь кладёт свой файл — роль доступна. Захардкоженного перечня нет. Из frontmatter собирается компактный ростер для оркестратора.
+Role like MD-file-in `/skills/`. Users put their files - the role is available. There is no hard-to-cut list.. Isa frontmatter assembling a compact roster for the orchestrator.
 
 ## Input
-Директория `/freeagent/skills/*.md`
+Directory `/freeagent/skills/*.md`
 
 ## Output
-- Список доступных ролей для UI расширения
-- Ростер для оркестратора: `agent_id [статус] summary`
-- Валидационные ошибки по невалидным файлам
+- List of available roles for UI expansion
+- roster for orchestrator: `agent_id [status] summary`
+- Validation errors on invalid files
 
 ## Contract
 
-### Формат скилла
+### Skill format
 ```markdown
 ---
 name: seo_auditor
-summary: аудит сайтов на техническое SEO, выдаёт отчёт в audit.md
+summary: Website audits for technical SEO, report audit.md
 ---
 
-# Роль
-... полное описание, протокол работы, формат ответов ...
+# Role of the role
+... full description, protocol, format ...
 
 ## Memory protocol
-Упоминание, что по команде REQUEST_MEMORY нужно заполнить присланный шаблон.
+Mention, command REQUEST_MEMORY I need to fill out the template..
 ```
 
-- `name` — обязателен, уникален, слаг (`[a-z0-9_]+`), используется как префикс `agent_id`
-- `summary` — **обязателен**, одна строка ≤ 120 символов. Из него строится ростер
-- Файл без валидного frontmatter → не появляется в списке, ошибка в `NOTIFY`
+- `name` — mandatory, uniquely, slug (`[a-z0-9_]+`), prefixed `agent_id`
+- `summary` — **mandatory**, line ≤ 120 symbolism. It's a roaster that's built out of.
+- File without validation frontmatter → not appearing on the list, slip-up `NOTIFY`
 
-### Ростер для оркестратора
+### roster for orchestrator
 ```
-coder1       [свободен]  пишет и правит код по спекам, TypeScript/Node
-researcher1  [работает]  ищет информацию в вебе, результат кладёт в файл
-seo_auditor1 [свободен]  аудит сайтов на техническое SEO, отчёт в audit.md
+coder1       [free]  Writes and edits code on specks, TypeScript/Node
+researcher1  [work]  web-search, file
+seo_auditor1 [free]  Website audits for technical SEO, report audit.md
 ```
-Обновляется при изменении состава агентов или их статуса. Полные MD ролей оркестратору не отправляются — он маршрутизирует, а не исполняет.
+Updated when the composition of agents or their status changes. Complete. MD The orchestrator is not assigned roles; he routs, not.
 
-### Встроенные скиллы
-Поставляются в комплекте, копируются при `freeagent init`, пользователь может править: `orchestrator`, `coder`, `tester`, `researcher`, `reviewer`.
+### Built-in skills
+Supplied as a set, copy `freeagent init`, user can rule: `orchestrator`, `coder`, `tester`, `researcher`, `reviewer`.
 
-Скилл `orchestrator` дополнительно содержит: протокол планирования (выдать `[PLAN]` до выполнения), формат адресации (`to: agent_id`), правило работы со сводками.
+skill `orchestrator` supplement: planning (hand out `[PLAN]` before), addressing (`to: agent_id`), summary.
 
 ## Constraints
-- Скиллы читаются расширением через FSA (для списка ролей) и CLI (для инжекта и ростера)
-- Изменение файла скилла не влияет на уже инициализированных агентов — роль в их контексте зафиксирована при INIT
-- `summary` не должен содержать переводов строк — ломает сборку ростера
+- Skills read extension through FSA (role-list) and CLI (pyre)
+- Changing the skill file does not affect the agents already initialized, the role in their context is fixed when the agent is not identified. INIT
+- `summary` should not contain translations of lines - breaks the assembly of the roster
 
 ## Dependencies
 `spec_fs_folder_access`
 
 ## Tests
 ### Unit
-1. Валидный скилл парсится, попадает в список
-2. Без `summary` → отклонён с внятной ошибкой
-3. Дублирующийся `name` → отклонён второй, ошибка
-4. `summary` длиннее 120 символов → обрезан с warning
-5. Ростер собирается из активных агентов с корректными статусами
-6. Пять встроенных скиллов проходят валидацию
+1. Valid skill parses, listing
+2. No `summary` → rejected
+3. Duplicate `name` → rejected, mistake
+4. `summary` longer 120 symbolism → cut off warning
+5. Roster is made up of active agents with correct statuses.
+6. Five built-in skills are validated
 
 ### Integration check
-Положить кастомный скилл в `/skills/` → он появился в списке ролей в UI → создать по нему агента → его summary виден в ростере оркестратора
+Put the custom skill in `/skills/` → He appeared on the list of roles in UI → squirt out → his summary seen in the roster of the orchestrator
 
 ### Definition of done
-- Тесты зелёные, кастомный скилл работает end-to-end
-- Ни одного захардкоженного списка ролей в коде
-- Прогон integration check'ов предыдущих PR
+- Tests green., custom skill works end-to-end
+- Not a single hard-to-digest list of roles in the code
+- Run. integration check'previous PR

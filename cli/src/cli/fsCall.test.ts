@@ -1,4 +1,4 @@
-// Проводка [FS]/[FS_RESULT] через шину (микро-PR перед PR-5): полный путь, а не только in-memory.
+// Wiring [FS]/[FS_RESULT] through the bus (micro-PR before PR-5): full path, not just in-memory.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -38,15 +38,15 @@ test('FS_CALL: tag layer -> jsonl file -> parseBusLine -> dispatch -> parseFsCal
     payload: heredocBody,
   };
 
-  // тег-слой: как будто content script разобрал ответ модели (toTagFormat/fromTagFormat не меняются)
+  // tag-layer: as if the content script parsed the model's response (toTagFormat/fromTagFormat do not change)
   const tagged = toTagFormat(original);
   const [extracted] = fromTagFormat(tagged);
   assert.ok(extracted);
-  assert.equal(extracted.payload, heredocBody, 'тег-слой не тронул heredoc-тело');
+  assert.equal(extracted.payload, heredocBody, 'the layer tag did not touch the heredoc body');
 
   const withId: BusMessage = { ...extracted, id: randomUUID() };
 
-  // файловый слой: реальная строка jsonl, реальная запись/чтение
+  // file layer: real jsonl string, real write/read
   await writeFile(join(freeagentDir, 'incoming', 'browser_a.jsonl'), JSON.stringify(withId) + '\n', 'utf8');
 
   const registry: AgentsRegistry = {
@@ -57,10 +57,10 @@ test('FS_CALL: tag layer -> jsonl file -> parseBusLine -> dispatch -> parseFsCal
 
   const { commands } = await runMainLoopOnce(freeagentDir, writer, state);
 
-  assert.equal(commands.length, 1, 'FS_RESULT адресован ровно одному получателю — вызвавшему агенту');
+  assert.equal(commands.length, 1, 'FS_RESULT is addressed to exactly one recipient - the calling agent');
   assert.equal(commands[0].instanceId, 'browser_a');
   assert.equal(commands[0].message.type, 'FS_RESULT');
-  assert.equal(commands[0].message.to, 'coder1', 'FS_RESULT адресован instance/agent вызвавшего, не broadcast');
+  assert.equal(commands[0].message.to, 'coder1', 'FS_RESULT addressed to the instance/agent of the caller, not broadcast');
 
   const rendered = commands[0].message.payload as string;
   assert.match(rendered, /"ok":true/);
@@ -69,10 +69,10 @@ test('FS_CALL: tag layer -> jsonl file -> parseBusLine -> dispatch -> parseFsCal
   assert.equal(
     writtenFile,
     ['```ts', 'const x = 1; // pipe | and `backtick`', '```', '[FS | op: read | path: fake.md]'].join('\n'),
-    'тело heredoc (бэктики, |, вложенная тег-подобная строка) дошло до диска дословно',
+    'body heredoc (backtics, |, nested tag-like string) reached disk verbatim',
   );
 
   await appendCommands(freeagentDir, commands);
   const commandsFile = await readFile(join(freeagentDir, 'commands', 'browser_a.jsonl'), 'utf8');
-  assert.match(commandsFile, /"type":"FS_RESULT"/, 'FS_RESULT инжектится через commands/<instance_id>, не напрямую из CLI');
+  assert.match(commandsFile, /"type":"FS_RESULT"/, 'FS_RESULT is injected via commands/<instance_id>, not directly from the CLI');
 });

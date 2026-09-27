@@ -1,85 +1,85 @@
 # Spec: verification
-# Version: 1.0 — НОВАЯ
-# Читать вместе с ARCHITECTURE.md (§9 верификация)
+# Version: 1.0 — NEW
+# Reading with ARCHITECTURE.md (§9 verification)
 
 ## Goal
-`RESULT: DONE` не принимается на веру. CLI устанавливает факт запуском тестов.
+`RESULT: DONE` faithless. CLI establishes the fact of running tests.
 
 ## Input
-- `WRITE` с полем `kind: 'test' | 'code' | 'doc' | 'data'`
-- `TESTS_READY` с командой запуска
-- Раздел Tests из спеки задачи (если задача идёт по спеке)
+- `WRITE` field-wise `kind: 'test' | 'code' | 'doc' | 'data'`
+- `TESTS_READY` launcher
+- Section Tests fumble (if the problem is on the line)
 
 ## Output
-- Вердикт: шаг закрыт / эскалация
-- Лог прогона в `/freeagent/logs/`
+- Verdict: step-by-step / escalation
+- Log of a run in `/freeagent/logs/`
 
 ## Contract
 
-### Протокол шага
+### Step protocol
 ```
-1. агент → WRITE kind:test    (тест пишется ПЕРВЫМ)
-2. агент → WRITE kind:code
-3. агент → TESTS_READY { task_id, command: "npm test -- auth.test.ts" }
-4. CLI запускает команду
-     exit 0  → шаг закрыт
-     exit ≠0 → эскалация оркестратору с stderr
+1. agent → WRITE kind:test    (The test is written first.)
+2. agent → WRITE kind:code
+3. agent → TESTS_READY { task_id, command: "npm test -- auth.test.ts" }
+4. CLI launcher
+     exit 0  → step-by-step
+     exit ≠0 → escalation to orchestrator stderr
 ```
 
-CLI не угадывает, что тест, а что код — агент объявляет полем `kind`.
+CLI guessless, test, What the code is, the agent declares the field `kind`.
 
-**Запускает CLI, не агент.** Агент, проверяющий сам себя, — тот же экземпляр, который мог сгаллюцинировать.
+**Launching. CLI, agent.** Agent., self-examining, — same-copy, hallucinatory.
 
-### Белый список команд
-Разрешены только: `npm test`, `npm run test:*`, `pnpm test`, `yarn test`, `pytest`, `go test`, `cargo test`, `jest`, `vitest` (+ их аргументы).
+### Whitelist of teams
+Only allowed.: `npm test`, `npm run test:*`, `pnpm test`, `yarn test`, `pytest`, `go test`, `cargo test`, `jest`, `vitest` (+ reasoning).
 
-Всё остальное → `ERROR`, команда не выполняется. Без этого мы дали слабой модели шелл.
+Everything else. → `ERROR`, command fails. Without that, we gave a weak model of Shell..
 
-Таймаут прогона: 120с по умолчанию, конфигурируем.
+timeout: 120default, configure.
 
-### Признаки провала без участия LLM
-- явный `RESULT: FAILED`
-- ненулевой exit code
-- заявлен `WRITE` на файл, которого нет на диске после записи
-- нет `RESULT` дольше таймаута задачи
-- `self_assessment.percent` ниже порога (по умолчанию 70)
+### Signs of failure without participation LLM
+- explicit `RESULT: FAILED`
+- non-zero exit code
+- stated `WRITE` file, which is not on the disk after recording
+- no `RESULT` timeout
+- `self_assessment.percent` below-threshold (default 70)
 
-### Самооценка — второй слой
-Для задач без механических тестов (ресёрч, документация, ревью) CLI добавляет к финальному запросу: «жёстко оцени свою работу в процентах и опиши почему». Ответ идёт в `ResultPayload.self_assessment`.
+### Self-esteem is the second layer
+For tasks without mechanical tests (cross-section, documentation, revue) CLI add to the final request: «Rate your work as a percentage and explain why.». The answer goes in `ResultPayload.self_assessment`.
 
-Применяется **только на завершении крупных шагов** — вопрос и ответ тратят контекст.
+Applicable **Only at the end of the major steps** — Question and answer waste context.
 
-> Ограничение: опрашивается тот же экземпляр, который мог ошибиться. Корреляция слабая. На тестируемых задачах — вспомогательный сигнал.
+> Limitation: polled, wrong-headed. Correlation weak. On the tested tasks – an auxiliary signal.
 
-### Сверка имён тестов
-Если задача идёт по спеке с разделом Tests — CLI сверяет, что имена запущенных тестов соответствуют перечисленным в спеке. Расхождение → warning в вывод (не блокирует).
+### Test name reconciliation
+If the task is on the speck with the section Tests — CLI check, that the names of the tests running correspond to those listed in the speck. Disparity → warning conclusion (block out).
 
 ## Constraints
-- Тесты запускаются в директории проекта, с таймаутом, вывод захватывается целиком
-- Первый шаг любой спеки не может быть верифицирован тестами, которых ещё нет — если `TESTS_READY` не пришёл, шаг закрывается по `RESULT: DONE` с пометкой `unverified` в логе и в выводе CLI
-- **Известное ограничение:** агент может написать тест, проходящий всегда (`expect(true).toBe(true)`). Механически не отличить. Сверка имён — частичная мера. Тесты не абсолютный ground truth, а лучший доступный (ARCHITECTURE §9)
+- Tests are run in the project directory, time-out, conclusion
+- The first step of any speck cannot be verified by tests., which are not yet there, if `TESTS_READY` I didn't come., step-close `RESULT: DONE` marked `unverified` log-in CLI
+- **A known limitation:** Agent can write a test, passing (`expect(true).toBe(true)`). Mechanically indistinguishable. Name reconciliation is a partial measure. Tests are not absolute ground truth, a the best available (ARCHITECTURE §9)
 
 ## Dependencies
 `spec_message_bus_types`, `spec_cli`
 
 ## Design note
-Verification не знает про план. Она получает задачу, тесты, код и возвращает вердикт: «ок» или «провал + текст ошибки». Кто её позвал — не её дело. Верхний слой (`plan_execution`) вызывает verification как функцию, обратной зависимости нет.
+Verification doesn't know about the plan. She gets the task., test, code and returns verdict: «ok» or «failure + erroneous». Who called her is none of her business.. Top layer (`plan_execution`) trigger verification function, There is no inverse dependence.
 
 ## Tests
 ### Unit
-1. `TESTS_READY` с командой из белого списка → запуск, вердикт по exit code
-2. Команда вне белого списка (`rm -rf /`, `curl ...`) → `ERROR`, не выполнена
-3. Таймаут прогона → шаг помечен провалившимся, процесс убит
-4. `WRITE` заявлен, файла на диске нет → провал
-5. `self_assessment` ниже порога → эскалация даже при `DONE`
-6. Шаг без `TESTS_READY` → закрыт как `unverified`, помечен в логе
-7. Имена тестов расходятся со спекой → warning, шаг не блокируется
+1. `TESTS_READY` whitelisted → launch, verdict exit code
+2. Team off-whitelist (`rm -rf /`, `curl ...`) → `ERROR`, failed
+3. timeout → step-marked, dead-end
+4. `WRITE` stated, No file on the disk → failure
+5. `self_assessment` below-threshold → escalation, even in the face of `DONE`
+6. Step without `TESTS_READY` → closed `unverified`, logged
+7. Test names diverge from the speck → warning, step not blocked
 
 ### Integration check
-Агент пишет тест и код по простой спеке → CLI прогоняет → зелёные → шаг закрыт. Затем подсунуть заведомо ломающийся код → красные → эскалация с текстом ошибки
+Agent writes test and code on a simple speck → CLI drive away → green → step-by-step. Then, you can put in a code that's obviously broken. → red → escalation
 
 ### Definition of done
-- Тесты зелёные
-- Ни одна команда вне белого списка не выполнима через агента
-- `unverified` шаги видимы пользователю, не выдаются за проверенные
-- Прогон integration check'ов предыдущих PR
+- Tests green.
+- No team outside the whitelist can be executed through an agent.
+- `unverified` steps visible to the user, not given out as verified
+- Run. integration check'previous PR

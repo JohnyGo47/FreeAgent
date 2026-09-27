@@ -1,5 +1,5 @@
-// REGISTER_REQUEST через главный цикл (spec_init_agent): расширение пишет incoming → CLI мержит,
-// присваивает agent_id, инжектит INIT в commands/<instance_id>.
+// REGISTER_REQUEST through the main loop (spec_init_agent): the extension writes incoming → CLI merges,
+// assigns agent_id, injects INIT into commands/<instance_id>.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
@@ -24,7 +24,7 @@ test('REGISTER_REQUEST: agent_id assigned, registry updated, INIT command routed
   await mkdir(join(freeagentDir, 'skills'), { recursive: true });
   await writeFile(
     join(freeagentDir, 'skills', 'coder.md'),
-    ['---', 'name: coder', 'summary: пишет код', '---', '# Coder role body'].join('\n'),
+    ['---', 'name: coder', 'summary: writes code', '---', '# Coder role body'].join('\n'),
     'utf8',
   );
 

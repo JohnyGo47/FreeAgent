@@ -53,9 +53,9 @@
     "chatgpt.com": {
       "domain": "chatgpt.com",
       "selectors": {
-        "input": ["div#prompt-textarea[contenteditable=\"true\"]"],
-        "submit": ["button[data-testid=\"send-button\"]"],
-        "response_container": ["div[data-message-author-role=\"assistant\"]"],
+        "input": ["#prompt-textarea", "div[contenteditable=\"true\"][data-virtualkeyboard]", "textarea"],
+        "submit": ["#composer-submit-button", "button[data-testid=\"send-button\"]", "button.composer-submit-btn", "button[aria-label*=\"Send\"]", "button[aria-label*=\"Send\"]"],
+        "response_container": ["[data-message-author-role=\"assistant\"]"],
         "typing_indicator": ["button[data-testid=\"stop-button\"]"]
       },
       "failure_patterns": {

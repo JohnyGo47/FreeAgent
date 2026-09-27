@@ -1,4 +1,4 @@
-// freeagent.config.json — единая точка настроек CLI + расширения (spec_config, ARCHITECTURE §4).
+// freeagent.config.json - a single point of CLI settings + extensions (spec_config, ARCHITECTURE §4).
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -21,7 +21,7 @@ export interface FreeAgentConfig {
   checkpoint_branch: boolean;
   registry_url: string;
   registry_check_hours: number;
-  bus_rotation_threshold_bytes: number; // spec_bus_rotation: порог ротации message_bus.jsonl
+  bus_rotation_threshold_bytes: number; // spec_bus_rotation: rotation threshold message_bus.jsonl
   known_instances: Record<string, KnownInstance>;
   project_id?: string;
   [extra: string]: unknown;
@@ -32,7 +32,7 @@ export const DEFAULT_CONFIG: FreeAgentConfig = {
   project_root: '.',
   context_threshold_pct: 60,
   backoff_ms: [30000, 60000, 120000],
-  init_timeout_ms: 60000,
+  init_timeout_ms: 600000,
   test_timeout_ms: 120000,
   self_assessment_threshold: 70,
   mode: 'plan',

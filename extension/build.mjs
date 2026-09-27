@@ -1,8 +1,8 @@
 import * as esbuild from 'esbuild';
 
-// background — service worker "type": "module" в manifest, ESM. Остальные три
-// грузятся через <script src="..."> (popup/offscreen) или как classic content
-// script — им нужен IIFE, ESM там даст "Cannot use import statement".
+// background - service worker "type": "module" in manifest, ESM. The other three
+// loaded via <script src="..."> (popup/offscreen) or as classic content
+// script - they need IIFE, ESM will give "Cannot use import statement" there.
 await esbuild.build({
   entryPoints: [{ out: 'background', in: 'src/background/index.ts' }],
   outdir: '.',

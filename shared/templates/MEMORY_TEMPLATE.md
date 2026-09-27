@@ -1,25 +1,25 @@
 # MEMORY: {agent_id}
 # Generated: {ISO timestamp}
-# Task: {task_id или NONE}
+# Task: {task_id or NONE}
 
 ## Current state
-Одним абзацем: что делаю сейчас и на каком шаге остановился.
+In one paragraph: what I’m doing now and what step I stopped at.
 
 ## Completed
-- Завершённые подзадачи (что НЕ надо переделывать)
+- Completed subtasks (what does NOT need to be redone)
 
 ## In progress
-Что начато но не закончено: какие файлы тронуты, что изменено, что осталось.
+What has been started but not finished: what files have been touched, what has been changed, what remains.
 
 ## Key decisions
-- Принятые решения с причинами (чтобы преемник их не пересматривал)
+- Decisions made with reasons (so that the successor does not revise them)
 
 ## Files touched
-- `path/to/file` — что сделано
+- `path/to/file` - what is done
 
 ## Next steps
-1. Шаг, с которого продолжать
+1. Step from which to continue
 2. ...
 
 ## Warnings
-Грабли, на которые уже наступили.
+A rake that has already been stepped on.

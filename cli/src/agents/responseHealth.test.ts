@@ -15,7 +15,7 @@ function health(klass: HealthPayload['klass']): HealthPayload {
   return { agent_id: 'coder1', klass, raw_excerpt: 'excerpt' };
 }
 
-test('unavailable: backoff нарастает по BACKOFF_MS, счётчик recovery (attempts) не меняется', () => {
+test('unavailable: backoff increases according to BACKOFF_MS, the recovery (attempts) counter does not change', () => {
   let reg = registry();
   const delays: number[] = [];
   for (let i = 0; i < 3; i++) {
@@ -28,7 +28,7 @@ test('unavailable: backoff нарастает по BACKOFF_MS, счётчик re
   assert.equal(reg.coder1.attempts, undefined);
 });
 
-test('unavailable: после исчерпания backoff — NOTIFY со всеми кандидатами кроме упавшего', () => {
+test('unavailable: after exhaustion backoff - NOTIFY with all candidates except the failed one', () => {
   let reg = registry();
   for (let i = 0; i < 3; i++) {
     reg = reactToResponseHealth(reg, health('unavailable'), 'now', BACKOFF_MS, []).registry;
@@ -41,7 +41,7 @@ test('unavailable: после исчерпания backoff — NOTIFY со вс�
   }
 });
 
-test('candidateServices: все домены реестра кроме упавшего', () => {
+test('candidateServices: all registry domains except the fallen one', () => {
   const adapterRegistry: AdapterRegistry = {
     registry_version: 1,
     adapters: {
@@ -53,7 +53,7 @@ test('candidateServices: все домены реестра кроме упав�
   assert.deepEqual(candidateServices(adapterRegistry, 'kimi.com'), ['grok.com']);
 });
 
-test('rate_limited / context_full -> switch_backup, оркестратор ничего не получает', () => {
+test('rate_limited / context_full -> switch_backup, orchestrator receives nothing', () => {
   const forRateLimited = reactToResponseHealth(registry(), health('rate_limited'), 'now', BACKOFF_MS, []);
   assert.equal(forRateLimited.action.kind, 'switch_backup');
   assert.equal(forRateLimited.toBus, undefined);
@@ -63,7 +63,7 @@ test('rate_limited / context_full -> switch_backup, оркестратор ни�
   assert.equal(forContextFull.toBus, undefined);
 });
 
-test('no_tags: до 3 попыток переспросить формат, дальше — NOTIFY, четвёртая попытка не делается', () => {
+test('no_tags: up to 3 attempts to ask the format again, then - NOTIFY, the fourth attempt is not made', () => {
   let reg = registry();
   const kinds: string[] = [];
   for (let i = 0; i < 4; i++) {

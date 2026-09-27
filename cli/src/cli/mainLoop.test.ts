@@ -16,7 +16,7 @@ async function tmpDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'freeagent-mainloop-'));
 }
 
-test('полный цикл: расширение пишет в incoming → CLI мержит → маршрутизирует → реестр отражает актуальный статус', async (t) => {
+test('full cycle: extension writes to incoming → CLI merges → routes → registry reflects current status', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
   await mkdir(join(dir, 'incoming'), { recursive: true });
@@ -41,7 +41,7 @@ test('полный цикл: расширение пишет в incoming → CLI
   assert.match(commandsFile, /"type":"TASK"/);
 });
 
-test('невалидный адресат: ERROR уходит в главную шину, ни одна команда не написана', async (t) => {
+test('invalid destination: ERROR goes to the main bus, no commands have been written', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
   await mkdir(join(dir, 'incoming'), { recursive: true });
@@ -61,7 +61,7 @@ test('невалидный адресат: ERROR уходит в главную 
   assert.match(bus, /"type":"ERROR"/);
 });
 
-test('bus_rotation: курсор впереди точки разреза -> читатель продолжает без разрывов и без дублей', async (t) => {
+test('bus_rotation: cursor ahead of cut point -> reader continues without breaks and without duplicates', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
   await mkdir(join(dir, 'incoming'), { recursive: true });
@@ -72,11 +72,11 @@ test('bus_rotation: курсор впереди точки разреза -> ч�
 
   const state: MainLoopState = { registry: {}, buffered: {}, cursor: 0 };
   await runMainLoopOnce(dir, writer, state);
-  assert.equal(state.cursor, 600); // курсор дошёл до конца — впереди будущей точки разреза
+  assert.equal(state.cursor, 600); // the cursor has reached the end - ahead of the future cut point
 
   const now = Date.now();
   const rotated = await rotateIfNeeded(busPath, join(dir, 'message_bus_archive'), { ...DEFAULT_ROTATION_CONFIG, thresholdBytes: 0, keepMinMessages: 200, keepMinMs: 0 }, now);
-  assert.equal(rotated.rotated, true); // архив забрал seq 1..400, остались 401..600
+  assert.equal(rotated.rotated, true); // archive took seq 1..400, 401..600 remained
 
   await writer.mergeOnce([line('m601', 'coder1', 'cli', 'STATUS', { state: 'IDLE' })]);
   const warnings: string[] = [];
@@ -87,11 +87,11 @@ test('bus_rotation: курсор впереди точки разреза -> ч�
   } finally {
     console.warn = originalWarn;
   }
-  assert.equal(state.cursor, 601); // продолжил ровно со следующего сообщения, без повторной обработки
-  assert.equal(warnings.length, 0); // ничего не пропущено — предупреждать не о чем
+  assert.equal(state.cursor, 601); // continued exactly from the next message, without re-processing
+  assert.equal(warnings.length, 0); // nothing is missing - nothing to warn about
 });
 
-test('bus_rotation: курсор позади точки разреза -> читатель стартует с первого доступного seq, warning выведен', async (t) => {
+test('bus_rotation: cursor behind the cut point -> reader starts from the first available seq, warning is displayed', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
   await mkdir(join(dir, 'incoming'), { recursive: true });
@@ -100,8 +100,8 @@ test('bus_rotation: курсор позади точки разреза -> чи�
   const writer = await BusWriter.create(busPath);
   for (let i = 0; i < 600; i++) await writer.mergeOnce([line(`m${i}`, 'coder1', 'cli', 'STATUS', { state: 'IDLE' })]);
 
-  // Курсор отстал (200) от того, что будет заархивировано (1..400) — например, читатель долго
-  // не запускался.
+  // The cursor is behind (200) from what will be archived (1..400) - for example, the reader is long
+  // didn't start.
   const state: MainLoopState = { registry: {}, buffered: {}, cursor: 200 };
 
   const now = Date.now();
@@ -116,7 +116,7 @@ test('bus_rotation: курсор позади точки разреза -> чи�
   } finally {
     console.warn = originalWarn;
   }
-  assert.equal(state.cursor, 600); // дошёл до конца оставшегося файла (401..600), ничего не потеряно
+  assert.equal(state.cursor, 600); // reached the end of the remaining file (401..600), nothing was lost
   assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /пропущено \d+ сообщений \(в архиве\)/);
+  assert.match(warnings[0], /\d+ messages skipped \(archived\)/);
 });

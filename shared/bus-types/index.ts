@@ -1,6 +1,6 @@
 import { log } from '../log.ts';
 
-// задачи и результаты / жизненный цикл агента / файлы / планирование / здоровье / системное
+// tasks and results / agent life cycle / files / planning / health / system
 export const MESSAGE_TYPES = [
   'TASK', 'RESULT', 'STATUS',
   'READY', 'REGISTER_REQUEST', 'TAB_STATE', 'HEARTBEAT',
@@ -11,7 +11,7 @@ export const MESSAGE_TYPES = [
 ] as const;
 export type MessageType = typeof MESSAGE_TYPES[number];
 
-// IDLE/WORKING — единственная «рабочая» зона; ACTIVE намеренно отсутствует (ARCHITECTURE §7, ревизия v1.1 #47)
+// IDLE/WORKING is the only “working” zone; ACTIVE is intentionally missing (ARCHITECTURE §7, revision v1.1 #47)
 export const AGENT_STATUSES = [
   'INITIALIZING',
   'INIT_FAILED',
@@ -27,8 +27,8 @@ export const AGENT_STATUSES = [
 export type AgentStatus = typeof AGENT_STATUSES[number];
 
 export interface BusMessage {
-  id: string;          // uuid, ставит отправитель при создании; стабилен до записи в incoming; дедуп мержа
-  seq?: number;         // только в главной шине, присваивает CLI при мерже
+  id: string;          // uuid, set by the sender when creating; stable until written to incoming; dedup merge
+  seq?: number;         // only on the main bus, assigns CLI when merging
   from: string;         // agent_id | 'user' | 'cli' | 'extension' | instance_id
   to: string;            // agent_id | 'orchestrator' | 'cli' | 'extension' | 'broadcast'
   type: MessageType;
@@ -96,7 +96,7 @@ export function parseBusLine(line: string): ParseResult {
   };
 }
 
-// Тег-формат — только слой перевода для чата LLM; id/seq в него не входят (ARCHITECTURE §4).
+// Tag-format - only translation layer for LLM chat; id/seq are not included in it (ARCHITECTURE §4).
 export function toTagFormat(msg: BusMessage): string {
   return `[MSG | from: ${msg.from} | to: ${msg.to} | type: ${msg.type}]\n${JSON.stringify(msg.payload)}\n[/MSG]`;
 }
@@ -118,11 +118,11 @@ const OPEN_TAG_RE = /\[MSG\s*\|([\s\S]*?)\]/g;
 const CLOSE_TAG = '[/MSG]';
 
 export function fromTagFormat(text: string): BusMessage[] {
-  // Раньше здесь глобально вырезались markdown-заборы (```) по всему тексту — задумывалось
-  // как защита от LLM, оборачивающих блок в ```, но заборы не мешают поиску [MSG]/[/MSG]
-  // (независимые структуры), а вот payload внутри блока эта чистка молча портила, если тело
-  // само легитимно содержало тройные бэктики (например, код с markdown-фрагментом внутри).
-  // Найдено при проводке [FS_CALL]/[FS_RESULT] через штатную [MSG]-обёртку.
+  // Previously, markdown fences (```) were cut out globally throughout the text - this was intended
+  // as protection against LLMs wrapping the block in ```, but fences do not interfere with the search [MSG]/[/MSG]
+  // (independent structures), but this cleaning silently spoiled the payload inside the block if the body
+  // itself legitimately contained triple backticks (for example, code with a markdown fragment inside).
+  // Found when posting [FS_CALL]/[FS_RESULT] through the standard [MSG] wrapper.
   const cleaned = text;
   const results: BusMessage[] = [];
 
@@ -143,7 +143,7 @@ export function fromTagFormat(text: string): BusMessage[] {
       try {
         const payload = JSON.parse(body.trim());
         results.push({
-          id: '', // присваивается отправителем/расширением при выходе за пределы тег-формата (ARCHITECTURE §4)
+          id: '', // assigned by the sender/extension when going beyond the tag format (ARCHITECTURE §4)
           from: header.from,
           to: header.to,
           type: header.type as MessageType,

@@ -1,47 +1,47 @@
 # Spec: cli_plan_mode
 # Version: 2.0
-# Читать вместе с ARCHITECTURE.md (§8 план как программа)
+# Read along with ARCHITECTURE.md (§8 plan as a program)
 
 ## Goal
-План по умолчанию: оркестратор выдаёт план, пользователь подтверждает, только потом агенты трогают файлы.
+Default plan: the orchestrator issues a plan, the user confirms, and only then the agents touch the files.
 
 ## Input
-- Задача пользователя (`freeagent do "..."`)
-- Ответ оркестратора с `[PLAN]` в тег-формате
+- User task (`freeagent do "..."`)
+- Orchestrator response with `[PLAN]` in tag format
 
 ## Output
-- План отрендерен в TUI (шаги, агенты, файлы, зависимости)
-- `[Enter]` выполнить / `[e]` править в `$EDITOR` / `[Esc]` отменить
-- После подтверждения → `APPROVED` → `spec_plan_execution`
+- Plan rendered in TUI (steps, agents, files, dependencies)
+- `[Enter]` execute / `[e]` edit in `$EDITOR` / `[Esc]` cancel
+- After confirmation → `APPROVED` → `spec_plan_execution`
 
 ## Constraints
-- **Plan mode — default.** `yolo` включается явно и показывает постоянный индикатор в statusbar
-- Инструкция «сначала план» есть в скилле оркестратора, но **enforcement на стороне CLI**: любой `WRITE` до `APPROVED` по текущей задаче → `COMMAND: PAUSE` + уведомление «оркестратор начал без плана». Полагаться на дисциплину слабой модели нельзя
-- Правка: открыть план как markdown в `$EDITOR`, отредактированное отправить как `PLAN_REVISED`
-- Таймаут ожидания плана: 120с → показать сырой ответ оркестратора, предложить повторить
-- Невалидный план (циклы, несуществующие агенты) → возврат оркестратору до показа пользователю
-- `/mode` персистится в `freeagent.config.json`
+- **Plan mode — default.** `yolo` is enabled explicitly and shows a permanent indicator in the statusbar
+- The “plan first” instruction is in the orchestrator skill, but **enforcement is on the CLI side**: any `WRITE` to `APPROVED` for the current task → `COMMAND: PAUSE` + notification “orchestrator started without a plan”. You can't rely on the discipline of a weak model
+- Edit: open plan as markdown in `$EDITOR`, send edited as `PLAN_REVISED`
+- Plan waiting timeout: 120s → show raw orchestrator response, suggest repeating
+- Invalid plan (cycles, non-existent agents) → returned to the orchestrator before being shown to the user
+- `/mode` persists in `freeagent.config.json`
 
 ## Dependencies
-`spec_cli`, `spec_message_bus_types`, `spec_skills_system`, `spec_file_access` (дерево проекта — PR-4, см. заметку)
+`spec_cli`, `spec_message_bus_types`, `spec_skills_system`, `spec_file_access` (project tree - PR-4, see note)
 
-> **Дерево проекта.** Режим плана полезен, только если оркестратор получил дерево проекта в начале сессии (bootstrap — `spec_file_access` §6). Иначе он планирует по выдуманным путям. Дерево не входит в этот PR; зависимость учитывается при написании `file_access` (PR-4).
+> **Project tree.** Plan mode is only useful if the orchestrator received the project tree at the beginning of the session (bootstrap - `spec_file_access` §6). Otherwise, he plans along imaginary paths. The tree is not included in this PR; the dependency is taken into account when writing `file_access` (PR-4).
 
-> `cli_plan_mode` производит утверждённый план (`APPROVED`). `plan_execution` его потребляет. Зависимость — однонаправленная: `plan_execution` → `cli_plan_mode`, не наоборот.
+> `cli_plan_mode` produces an approved plan (`APPROVED`). `plan_execution` consumes it. The dependency is unidirectional: `plan_execution` → `cli_plan_mode`, not vice versa.
 
 ## Tests
 ### Unit
-1. Plan mode: агенты не получают `TASK` до `APPROVED`
-2. `WRITE` до `APPROVED` → `PAUSE`, пользователь уведомлён
-3. Yolo: `TASK` уходит сразу, индикатор режима отображается
-4. Правка: `PLAN_REVISED` содержит текст из редактора
-5. `/mode` персистится между запусками
-6. Таймаут 120с → сырой ответ показан, предложен повтор
+1. Plan mode: agents do not receive `TASK` until `APPROVED`
+2. `WRITE` to `APPROVED` → `PAUSE`, the user is notified
+3. Yolo: `TASK` goes away immediately, the mode indicator is displayed
+4. Edit: `PLAN_REVISED` contains text from the editor
+5. `/mode` persists between launches
+6. Timeout 120s → raw answer shown, repeat suggested
 
 ### Integration check
-Живой оркестратор: задача → план в терминале → Enter → агент получил `TASK`
+Live orchestrator: task → plan in terminal → Enter → agent received `TASK`
 
 ### Definition of done
-- Тесты зелёные
-- README (при публикации): первый пример показывает plan mode как default
-- Прогон integration check'ов предыдущих PR
+- Tests are green
+- README (when published): the first example shows plan mode as default
+- Running integration checks of previous PRs

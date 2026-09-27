@@ -1,4 +1,4 @@
-// End-to-end без LLM: играешь модель руками (spec_file_access шаг 4).
+// End-to-end without LLM: play the model with your hands (spec_file_access step 4).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';

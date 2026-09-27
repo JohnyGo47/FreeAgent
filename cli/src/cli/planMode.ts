@@ -1,12 +1,12 @@
-// Plan mode — default, enforcement на стороне CLI, не на дисциплине модели (spec_cli_plan_mode,
-// ARCHITECTURE §8/§10). Гейт живёт на одну текущую задачу: пока не approved, ни TASK от
-// оркестратора агенту, ни WRITE/EDIT от любого агента не проходят — mainLoop.ts блокирует их
-// сам (isBlockedByGate), опираясь на этот модуль только за состоянием.
+// Plan mode - default, enforcement on the CLI side, not on the model discipline (spec_cli_plan_mode,
+// ARCHITECTURE §8/§10). The gate lives on one current task: not yet approved, no TASK from
+// the orchestrator does not pass to the agent, nor WRITE/EDIT from any agent - mainLoop.ts blocks them
+// itself (isBlockedByGate), relying on this module only for the state.
 import { randomUUID } from 'node:crypto';
 import type { BusMessage, CommandPayload, NotifyPayload, PlanPayload } from '../../../shared/bus-types/index.ts';
 import { parsePlanText, validatePlan, planRetryOutcome, buildPlanRetryMessage } from '../orchestrator/plan.ts';
 
-export const PLAN_TIMEOUT_MS = 120_000;
+export const PLAN_TIMEOUT_MS = 10 * 60_000;
 
 export type PlanGateStatus = 'idle' | 'awaiting_plan' | 'plan_ready' | 'approved' | 'yolo' | 'timed_out';
 
@@ -16,27 +16,32 @@ export interface PlanGate {
   requestedAt?: number;
   plan?: PlanPayload;
   attempts: number;
-  rawText?: string; // последний сырой ответ оркестратора — для показа при отступлении/таймауте
+  rawText?: string; // last raw response from the orchestrator - to be shown during retreat/timeout
 }
 
 export const IDLE_GATE: PlanGate = { status: 'idle', attempts: 0 };
 
-// Новая задача от пользователя (/do, /btw) — старт гейта. Yolo пропускает его целиком: агенты
-// получают TASK сразу, индикатор режима в statusbar это отражает (spec constraint "yolo → TASK
-// сразу + индикатор").
+// New task from the user (/do, /btw) - start the gate. Yolo skips it entirely: agents
+// receive TASK immediately, the mode indicator in the statusbar reflects this (spec constraint "yolo → TASK
+// immediately + indicator").
 export function startTask(taskId: string, now: number, mode: 'plan' | 'yolo'): PlanGate {
   if (mode === 'yolo') return { status: 'yolo', taskId, attempts: 0 };
   return { status: 'awaiting_plan', taskId, requestedAt: now, attempts: 0 };
+}
+
+export function switchMode(gate: PlanGate, mode: 'plan' | 'yolo'): PlanGate {
+  if (mode === 'yolo') return { status: 'yolo', taskId: gate.taskId, attempts: 0 };
+  return gate.status === 'yolo' ? { ...IDLE_GATE } : gate;
 }
 
 export function isApproved(gate: PlanGate): boolean {
   return gate.status === 'approved' || gate.status === 'yolo';
 }
 
-// Любой TASK от оркестратора агенту или WRITE/EDIT от агента, пока не approved — заблокировать
-// (COMMAND: PAUSE + уведомление, собирается в mainLoop.ts). 'idle' намеренно НЕ блокирует: до
-// старта первой задачи гейт ничего не гейтит (нет задачи — нечего защищать); блокируют только
-// фазы реально начатой, но ещё не approved задачи.
+// Any TASK from the orchestrator to the agent or WRITE/EDIT from the agent, not yet approved - block
+// (COMMAND: PAUSE + notification, collected in mainLoop.ts). 'idle' intentionally does NOT block: before
+// start of the first task, the gate does not gate anything (no task - nothing to protect); they only block
+// phases of a task that has actually started, but has not yet been approved.
 export function isBlockedByGate(gate: PlanGate): boolean {
   return gate.status === 'awaiting_plan' || gate.status === 'plan_ready' || gate.status === 'timed_out';
 }
@@ -48,13 +53,13 @@ export function checkTimeout(gate: PlanGate, now: number, timeoutMs: number = PL
 }
 
 export type PlanIntakeOutcome =
-  | { kind: 'ignored' } // PLAN пришёл не в фазе ожидания — поздний/дублирующий ответ
-  | { kind: 'retry'; message: string } // отступление 1-2 (spec_md_orchestrator "План Б")
-  | { kind: 'show_raw'; rawText: string } // отступление 3 — сдаться, показать сырой текст
+  | { kind: 'ignored' } // PLAN did not arrive in the waiting phase - late/duplicate response
+  | { kind: 'retry'; message: string } // retreat 1-2 (spec_md_orchestrator "Plan B")
+  | { kind: 'show_raw'; rawText: string } // retreat 3 - give up, show raw text
   | { kind: 'ready'; plan: PlanPayload };
 
-// Разбор + валидация ответа оркестратора на [PLAN]. Общая точка с plan_execution (задача B.8) —
-// обе используют validatePlan из orchestrator/plan.ts, не дублируют проверку.
+// Parse + validate orchestrator response to [PLAN]. The common point with plan_execution (task B.8) is
+// both use validatePlan from orchestrator/plan.ts, do not duplicate the check.
 export function receivePlanText(gate: PlanGate, rawText: string, validAgentIds: string[]): { gate: PlanGate; outcome: PlanIntakeOutcome } {
   if (gate.status !== 'awaiting_plan') return { gate, outcome: { kind: 'ignored' } };
 
@@ -75,21 +80,21 @@ export function receivePlanText(gate: PlanGate, rawText: string, validAgentIds: 
   return { gate: { ...gate, status: 'plan_ready', plan: parsed.plan }, outcome: { kind: 'ready', plan: parsed.plan } };
 }
 
-// [Enter] в TUI.
+// [Enter] in TUI.
 export function approvePlan(gate: PlanGate): PlanGate {
   if (gate.status !== 'plan_ready') return gate;
   return { ...gate, status: 'approved' };
 }
 
-// [Esc] в TUI — задача отменена целиком, гейт сброшен.
+// [Esc] in TUI - the task is canceled entirely, the gate is reset.
 export function cancelPlan(): PlanGate {
   return { ...IDLE_GATE };
 }
 
 export type ReviseOutcome = { gate: PlanGate; toOrchestrator: BusMessage } | { gate: PlanGate; error: string };
 
-// Сериализация плана обратно в тот же STEP-формат для $EDITOR — то, что пользователь правит,
-// parsePlanText/revisePlan должны суметь прочитать без потерь (round-trip).
+// Serialize the plan back to the same STEP format for $EDITOR - what the user edits
+// parsePlanText/revisePlan should be able to be read without loss (round-trip).
 export function planToEditableText(plan: PlanPayload): string {
   const lines = plan.steps.map(
     (s) => `STEP ${s.step_id} | ${s.agent_id} | ${s.description} | FILES: ${s.files.join(', ')} | DEPENDS: ${s.depends_on.join(', ') || 'none'}`,
@@ -97,12 +102,12 @@ export function planToEditableText(plan: PlanPayload): string {
   return ['[PLAN]', ...lines, '[/PLAN]'].join('\n');
 }
 
-// [e] в TUI: план правится как markdown (тот же STEP-формат) в $EDITOR. Отредактированный текст
-// становится планом напрямую — повторный обход через оркестратора не нужен: план уже
-// человеком проверен, гонять его туда-обратно только ради того, чтобы CLI могло его же и
-// распарсить, стоило бы контекста оркестратора без механической пользы (ARCHITECTURE принцип 1).
-// PLAN_REVISED всё равно уходит оркестратору — информационно, чтобы его собственный контекст не
-// разошёлся с тем, что реально исполняется.
+// [e] in TUI: the plan is edited as markdown (same STEP format) in $EDITOR. Edited text
+// becomes a plan directly - a second round through the orchestrator is not needed: the plan is already
+// verified by a human, drive it back and forth just so that the CLI can do the same
+// parse, it would be worth the orchestrator context without mechanical benefit (ARCHITECTURE principle 1).
+// PLAN_REVISED still goes to the orchestrator - informationally, so that its own context is not
+// diverged from what is actually being implemented.
 export function revisePlan(gate: PlanGate, editedText: string, validAgentIds: string[]): ReviseOutcome {
   const parsed = parsePlanText(editedText);
   if (!parsed.ok) return { gate, error: parsed.error };
@@ -122,30 +127,30 @@ export function revisePlan(gate: PlanGate, editedText: string, validAgentIds: st
   };
 }
 
-// Enforcement на стороне CLI (constraint spec_cli_plan_mode): TASK от оркестратора агенту или
-// WRITE/EDIT от агента, пока не approved, — агент ставится на паузу.
+// Enforcement on the CLI side (constraint spec_cli_plan_mode): TASK from the orchestrator to the agent or
+// WRITE/EDIT from the agent, not yet approved - the agent is paused.
 export function pauseCommand(agentId: string): BusMessage {
   const payload: CommandPayload = { command: 'PAUSE', agent_id: agentId };
   return { id: randomUUID(), from: 'cli', to: agentId, type: 'COMMAND', ts: new Date().toISOString(), payload };
 }
 
-// Уведомление пользователю (не оркестратору — это не решение для него, а факт нарушения
-// протокола, дешёвая механическая правда, ARCHITECTURE §12) — to: 'cli', как responseHealth/
-// backupAgents NOTIFY, видно через /log.
+// Notification to the user (not the orchestrator - this is not a solution for him, but a fact of violation
+// protocol, cheap mechanical truth, ARCHITECTURE §12) - to: 'cli', like responseHealth/
+// backupAgents NOTIFY, visible via /log.
 export function planViolationNotify(agentId: string, details: string): BusMessage {
   const payload: NotifyPayload = { event: 'PLAN_MODE_VIOLATION', agent_id: agentId, details };
   return { id: randomUUID(), from: 'cli', to: 'cli', type: 'NOTIFY', ts: new Date().toISOString(), payload };
 }
 
-// Отступление 1-2 ("План Б", spec_md_orchestrator): переписать план строго по формату.
+// Digression 1-2 (“Plan B”, spec_md_orchestrator): rewrite the plan strictly according to the format.
 export function replanCommand(instructionText: string): BusMessage {
   const payload: CommandPayload = { command: 'REPLAN', args: { text: instructionText } };
   return { id: randomUUID(), from: 'cli', to: 'orchestrator', type: 'COMMAND', ts: new Date().toISOString(), payload };
 }
 
-// Отступление 3 и таймаут 120с — оба ведут к одному: показать пользователю сырой текст,
-// предложить повтор (spec constraint). to: 'cli' — тот же self-NOTIFY принцип, что pauseCommand's
-// уведомление.
+// Pause 3 and timeout 120s - both lead to the same thing: show the user raw text,
+// suggest a repeat (spec constraint). to: 'cli' - same self-NOTIFY principle as pauseCommand's
+// notification.
 export function planGiveUpNotify(rawText: string): BusMessage {
   const payload: NotifyPayload = { event: 'PLAN_TIMEOUT_OR_GIVEUP', details: rawText };
   return { id: randomUUID(), from: 'cli', to: 'cli', type: 'NOTIFY', ts: new Date().toISOString(), payload };

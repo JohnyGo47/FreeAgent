@@ -1,6 +1,6 @@
-// Integration check из spec_message_bus_write / spec_message_bus_read:
-// Node-скрипт пишет 5 строк в incoming/mock_instance.jsonl (эмуляция расширения, которого
-// ещё нет в PR-1) → CLI мержит → читатель главной шины видит все 5 с монотонным seq.
+// Integration check from spec_message_bus_write / spec_message_bus_read:
+// Node script writes 5 lines to incoming/mock_instance.jsonl (emulation of the extension that
+// not yet in PR-1) → CLI merges → main bus reader sees all 5 with monotonic seq.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,9 +11,9 @@ import { BusWriter } from './write.ts';
 import { NodeFsSource, BusReader } from './read.ts';
 import { InstanceBusWriter } from '../../../extension/src/bus/instanceBusWriter.ts';
 
-// Тестовый мост FileSystemFileHandle -> node:fs: InstanceBusWriter (offscreen, Tier 1) написан
-// против FSA-хэндла; в этой интеграционной проверке ему подкладывается реальный файл на диске,
-// чтобы прогнать его without a browser through the actual Tier 2 merge + NodeFsSource reader.
+// Test bridge FileSystemFileHandle -> node:fs: InstanceBusWriter (offscreen, Tier 1) written
+// against FSA handle; in this integration check, a real file on the disk is attached to it,
+// to drive it away without a browser through the actual Tier 2 merge + NodeFsSource reader.
 async function ensureFileExists(path: string): Promise<void> {
   const fh = await open(path, 'a');
   await fh.close();

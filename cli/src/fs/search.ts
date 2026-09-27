@@ -1,12 +1,12 @@
-// fs.search (spec_file_access): поиск по содержимому (content) или по имени/пути (name).
+// fs.search (spec_file_access): search by content (content) or by name/path (name).
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { resolveInRoot } from './pathGuard.ts';
 import { loadIgnoreMatcher } from './ignore.ts';
 import { fsError, fsOk, type FsResult } from './types.ts';
 
-// ponytail: cap на совпадения — ограничивает контекст модели. Значение — заглушка PR-4,
-// калибруется на реальных прогонах (Open items spec_file_access).
+// ponytail: cap on matches - limits the context of the model. Value - PR-4 plug,
+// calibrated on real runs (Open items spec_file_access).
 const MAX_MATCHES_PER_FILE = 20;
 
 async function walk(root: string, dirAbs: string, ignore: { isIgnored(p: string): boolean }, out: string[]): Promise<void> {

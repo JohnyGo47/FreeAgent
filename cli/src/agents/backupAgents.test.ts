@@ -12,7 +12,7 @@ function registryWithBackup(): AgentsRegistry {
   };
 }
 
-test('регистрация бэкапа: задачи, адресованные STANDBY-агенту, буферизуются (не приходят)', () => {
+test('registering a backup: tasks addressed to the STANDBY agent are buffered (do not arrive)', () => {
   const registry = registryWithBackup();
   const buffered: Record<string, BusMessage[]> = {};
   const task: BusMessage = { id: 't1', from: 'orchestrator', to: 'coder1_b', type: 'TASK', ts: 'now', payload: { task_id: 't1', description: 'x' } };
@@ -21,7 +21,7 @@ test('регистрация бэкапа: задачи, адресованны�
   assert.equal(buffered.coder1_b.length, 1);
 });
 
-test('context_full: полная процедура переключения, agent_id не меняется, оркестратор не уведомляется', () => {
+test('context_full: full switch procedure, agent_id does not change, orchestrator is not notified', () => {
   const registry = registryWithBackup();
 
   const begin = beginSwitch(registry, 'coder1', 'now', 'MEMORY TEMPLATE BODY');
@@ -32,7 +32,7 @@ test('context_full: полная процедура переключения, ag
 
   const handoff = completeMemoryHandoff(begin.registry, 'coder1', 'now', '## Current state\nmid-task');
   assert.ok(handoff.toCommand);
-  assert.equal(handoff.toCommand?.instanceId, 'browser_b'); // ушло на бэкап-инстанс
+  assert.equal(handoff.toCommand?.instanceId, 'browser_b'); // went to the backup instance
   assert.match((handoff.toCommand?.message.payload as { args: { text: string } }).args.text, /mid-task/);
 
   const activated = completeBackupActivation(handoff.registry, 'coder1_b', 'now');
@@ -40,21 +40,21 @@ test('context_full: полная процедура переключения, ag
   assert.equal(activated.registry.coder1.instance_id, 'browser_b');
   assert.equal(activated.registry.coder1.tab_id, 2);
   assert.equal(activated.registry.coder1.status, 'IDLE');
-  assert.equal('coder1_b' in activated.registry, false); // старая запись слита в основную
+  assert.equal('coder1_b' in activated.registry, false); // old entry merged into the main one
 
   for (const msg of [begin.toBus, handoff.toBus, activated.toBus]) {
     if (msg) assert.notEqual(msg.to, 'orchestrator');
   }
 });
 
-test('бэкап без MEMORY.md активируется с переданным реконструированным контекстом', () => {
+test('backup without MEMORY.md is activated with the transferred reconstructed context', () => {
   const registry = registryWithBackup();
   const begin = beginSwitch(registry, 'coder1', 'now', 'TEMPLATE');
   const handoff = completeMemoryHandoff(begin.registry, 'coder1', 'now', null, 'RECONSTRUCTED: last task t1, files: a.ts, b.ts');
   assert.match((handoff.toCommand?.message.payload as { args: { text: string } }).args.text, /RECONSTRUCTED: last task t1/);
 });
 
-test('отсутствие бэкапа при переключении -> NOTIFY, статус блокирует роутинг, очередь не теряется', () => {
+test('lack of backup when switching -> NOTIFY, status blocks routing, queue is not lost', () => {
   const registry: AgentsRegistry = { coder1: { agent_id: 'coder1', instance_id: 'browser_a', tab_id: 1, role: 'coder', status: 'WORKING' } };
   const outcome = beginSwitch(registry, 'coder1', 'now', 'TEMPLATE');
   assert.equal(outcome.toCommand, undefined);
@@ -68,7 +68,7 @@ test('отсутствие бэкапа при переключении -> NOTIF
   assert.equal(buffered.coder1.length, 1);
 });
 
-test('неизвестный agent_id -> no-op, не падает', () => {
+test("unknown agent_id -> no-op, doesn't crash", () => {
   const registry = registryWithBackup();
   const outcome = beginSwitch(registry, 'ghost1', 'now', 'TEMPLATE');
   assert.deepEqual(outcome.registry, registry);

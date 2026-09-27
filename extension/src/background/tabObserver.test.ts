@@ -10,7 +10,7 @@ function fakeTabsApi(): { api: TabsApi; fire(tabId: number): void } {
   };
 }
 
-test('закрытие отслеживаемой вкладки -> TAB_STATE closed для её agent_id', () => {
+test('closing a monitored tab -> TAB_STATE closed for its agent_id', () => {
   const { api, fire } = fakeTabsApi();
   const reports: Array<{ agentId: string; state: string }> = [];
   registerTabObserver(api, () => [{ agent_id: 'coder1', tab_id: 42 }], (agentId, state) => reports.push({ agentId, state }));
@@ -19,7 +19,7 @@ test('закрытие отслеживаемой вкладки -> TAB_STATE cl
   assert.deepEqual(reports, [{ agentId: 'coder1', state: 'closed' }]);
 });
 
-test('закрытие вкладки, не принадлежащей ни одному агенту -> ничего не сообщается', () => {
+test('closing a tab that does not belong to any agent -> nothing reported', () => {
   const { api, fire } = fakeTabsApi();
   const reports: unknown[] = [];
   registerTabObserver(api, () => [{ agent_id: 'coder1', tab_id: 42 }], (agentId, state) => reports.push({ agentId, state }));

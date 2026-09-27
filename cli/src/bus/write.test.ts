@@ -1,7 +1,7 @@
-// Tier 2 (CLI merge → главная шина) — единственный охват PR-1.
-// Tier 1 (offscreen-писатель расширения) вынесен в PR-2 по ROADMAP.md
-// ("PR-2 — Каркас расширения: ... message_bus_write Tier 1 ...");
-// расширения в PR-1 ещё не существует (integration check в спеке это прямо оговаривает).
+// Tier 2 (CLI merge → main bus) is the only PR-1 coverage.
+// Tier 1 (offscreen extension writer) moved to PR-2 according to ROADMAP.md
+//("PR-2 - Extension framework: ... message_bus_write Tier 1 ...");
+// the extension does not yet exist in PR-1 (the integration check in the spec directly stipulates this).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -94,6 +94,24 @@ test('seq restoration: restart with non-empty bus continues from max + 1', async
     const last = parseBusLine(lines[3]);
     assert.equal(last.ok, true);
     if (last.ok) assert.equal(last.msg.seq, 4);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('two live writers cannot assign the same seq', async () => {
+  const dir = await makeTmpDir();
+  try {
+    const busPath = join(dir, 'message_bus.jsonl');
+    const first = await BusWriter.create(busPath);
+    const second = await BusWriter.create(busPath);
+
+    await first.mergeOnce([line('first-writer')]);
+    await second.mergeOnce([line('second-writer')]);
+
+    const lines = await readBusLines(busPath);
+    const seqs = lines.map((l) => parseBusLine(l)).map((r) => (r.ok ? r.msg.seq : undefined));
+    assert.deepEqual(seqs, [1, 2]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

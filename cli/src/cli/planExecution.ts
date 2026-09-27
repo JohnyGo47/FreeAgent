@@ -1,8 +1,8 @@
-// Утверждённый план исполняется CLI механически (spec_plan_execution, ARCHITECTURE §8/§10).
-// Оркестратор просыпается только на исключениях: RESULT: FAILED, самооценка ниже порога, WRITE
-// вне files шага, агент FAILED после попыток, план исчерпан. Все функции здесь чистые — I/O
-// (маршрутизация TASK через router.ts с его буферизацией переходных статусов, запись FS,
-// сохранение состояния) делает mainLoop.ts.
+// The approved plan is executed mechanically by the CLI (spec_plan_execution, ARCHITECTURE §8/§10).
+// The orchestrator wakes up only on exceptions: RESULT: FAILED, self-esteem below threshold, WRITE
+// outside the files step, agent FAILED after attempts, plan exhausted. All functions here are pure - I/O
+// (TASK routing via router.ts with its buffering of transition statuses, FS entry,
+// saving state) does mainLoop.ts.
 import { randomUUID } from 'node:crypto';
 import type { BusMessage, NotifyPayload, PlanPayload, PlanStep, ResultPayload, StatusPayload, TaskPayload, TestsReadyPayload } from '../../../shared/bus-types/index.ts';
 import { verifyStep, type VerifyParams, type VerifyVerdict } from './verification.ts';
@@ -12,12 +12,12 @@ export type StepStatus = 'pending' | 'sent' | 'done' | 'failed';
 export interface PlanExecutionState {
   plan: PlanPayload;
   stepStatus: Record<number, StepStatus>;
-  taskIds: Record<number, string>; // step_id -> task_id отправленной TASK, для сопоставления RESULT
-  testsReadyCommands: Record<number, string>; // step_id -> command из TESTS_READY (задача A.3/A.7)
-  writtenFiles: Record<number, string[]>; // step_id -> файлы, реально записанные за этот шаг (FS_CALL write/edit)
-  unverifiedSteps: Set<number>; // шаги, закрытые без TESTS_READY (задача A.4) — видимо пользователю
-  stopped: boolean; // /stop (задача B.13): текущие задачи дорабатывают, новые не уходят
-  lastStatus: Record<string, StatusPayload['state']>; // дедуп STATUS по agent_id
+  taskIds: Record<number, string>; // step_id -> task_id of the sent TASK, to match RESULT
+  testsReadyCommands: Record<number, string>; // step_id -> command from TESTS_READY (task A.3/A.7)
+  writtenFiles: Record<number, string[]>; // step_id -> files actually written during this step (FS_CALL write/edit)
+  unverifiedSteps: Set<number>; // steps closed without TESTS_READY (task A.4) - visible to the user
+  stopped: boolean; // /stop (task B.13): current tasks are being finalized, new ones are not leaving
+  lastStatus: Record<string, StatusPayload['state']>; // dedup STATUS by agent_id
 }
 
 export function startExecution(plan: PlanPayload): PlanExecutionState {
@@ -32,10 +32,10 @@ function readySteps(state: PlanExecutionState): PlanStep[] {
   );
 }
 
-// Пересечение files среди готовых → последовательно; непересекающиеся → параллельно
-// (ARCHITECTURE §10). Жадно по порядку шагов в плане: файл, занятый уже 'sent' шагом или более
-// ранним шагом этого же раунда, блокирует более поздний — тот остаётся 'pending' и уйдёт
-// следующим раундом, когда файл освободится (RESULT по владельцу).
+// Intersection of files among ready ones → sequentially; disjoint → parallel
+// (ARCHITECTURE §10). Greedy by order of steps in the plan: file occupied by already 'sent' step or more
+// an early step of the same round, blocks a later one - it remains 'pending' and leaves
+// next round, when the file is free (RESULT by owner).
 function sendableSteps(state: PlanExecutionState): PlanStep[] {
   const claimed = new Set<string>();
   for (const step of state.plan.steps) {
@@ -81,9 +81,9 @@ function completionEvent(state: PlanExecutionState): ExecutionEvent {
   return allDone ? { kind: 'complete' } : { kind: 'progress' };
 }
 
-// TESTS_READY {task_id, command} — CLI просто запоминает команду против шага; сам запуск
-// откладывается до RESULT: DONE (applyResult ниже), где и решает, закрыт ли шаг
-// (spec_plan_execution контракт п.5, spec_verification протокол шага).
+// TESTS_READY {task_id, command} - CLI simply remembers the command against the step; the launch itself
+// deferred until RESULT: DONE (applyResult below), where it decides whether the step is closed
+// (spec_plan_execution contract clause 5, spec_verification step protocol).
 export function recordTestsReady(state: PlanExecutionState, msg: BusMessage): PlanExecutionState {
   if (msg.type !== 'TESTS_READY') return state;
   const payload = msg.payload as TestsReadyPayload;
@@ -92,9 +92,9 @@ export function recordTestsReady(state: PlanExecutionState, msg: BusMessage): Pl
   return { ...state, testsReadyCommands: { ...state.testsReadyCommands, [step.step_id]: payload.command } };
 }
 
-// Файл, реально записанный CLI (успешный FS_CALL write/edit) в рамках текущего 'sent' шага
-// агента — источник для verification'ой проверки "файл всё ещё на диске" (задача A.3) и,
-// отдельно, для git_checkpoints (не отсюда — mainLoop использует step.files напрямую там).
+// File actually written by CLI (successful FS_CALL write/edit) within the current 'sent' step
+// agent - source for verification check "the file is still on disk" (task A.3) and,
+// separately, for git_checkpoints (not from here - mainLoop uses step.files directly there).
 export function recordWrittenFile(state: PlanExecutionState, agentId: string, path: string): PlanExecutionState {
   const step = state.plan.steps.find((s) => s.agent_id === agentId && state.stepStatus[s.step_id] === 'sent');
   if (!step) return state;
@@ -110,15 +110,15 @@ export interface VerifyContext {
   verifyFn?: (params: VerifyParams) => Promise<VerifyVerdict>;
 }
 
-// RESULT: DONE/FAILED от агента, исполняющего текущий шаг. selfAssessmentThreshold —
-// config.self_assessment_threshold; verifyCtx — окружение для verification (задача A.7): реальный
-// прогон тестов вместо доверия DONE на слово. Порядок отказов: явный FAILED -> самооценка ниже
-// порога -> verification (белый список/exit code/таймаут/файл пропал/unverified).
+// RESULT: DONE/FAILED from the agent executing the current step. selfAssessmentThreshold —
+// config.self_assessment_threshold; verifyCtx - environment for verification (task A.7): real
+// running tests instead of taking DONE's word for it. Failure order: obvious FAILED -> lower self-esteem
+// threshold -> verification (white list/exit code/timeout/file missing/unverified).
 export interface ApplyResultOutcome {
   state: PlanExecutionState;
   event: ExecutionEvent;
   unverified?: boolean;
-  step?: PlanStep; // шаг, к которому относился этот RESULT — mainLoop использует для checkpoint (files/summary)
+  step?: PlanStep; // step this RESULT belonged to - mainLoop uses for checkpoint (files/summary)
 }
 
 export async function applyResult(
@@ -129,7 +129,7 @@ export async function applyResult(
 ): Promise<ApplyResultOutcome> {
   const payload = msg.payload as ResultPayload;
   const step = stepForTaskId(state, payload.task_id);
-  if (!step) return { state, event: { kind: 'progress' } }; // RESULT не про этот план — игнор
+  if (!step) return { state, event: { kind: 'progress' } }; // RESULT is not about this plan - ignore
 
   if (payload.status === 'FAILED') {
     const stepStatus = { ...state.stepStatus, [step.step_id]: 'failed' as StepStatus };
@@ -177,8 +177,8 @@ export async function applyResult(
   return { state: newState, event: completionEvent(newState), unverified: verdict.kind === 'unverified', step };
 }
 
-// WRITE вне заявленных files (pathGuard вернул FILE_NOT_OWNED) — тоже повод эскалации
-// (spec_plan_execution "Когда будим оркестратора"), не только молчаливый ERROR агенту.
+// WRITE outside the declared files (pathGuard returned FILE_NOT_OWNED) - also a reason for escalation
+// (spec_plan_execution "When we wake up the orchestrator"), not only a silent ERROR to the agent.
 export function applyOwnershipViolation(state: PlanExecutionState, agentId: string, attemptedPath: string): { state: PlanExecutionState; event: ExecutionEvent } {
   const entry = Object.entries(state.stepStatus).find(([id, status]) => status === 'sent' && state.plan.steps.find((s) => s.step_id === Number(id))?.agent_id === agentId);
   if (!entry) return { state, event: { kind: 'progress' } };
@@ -190,8 +190,8 @@ export function applyOwnershipViolation(state: PlanExecutionState, agentId: stri
   };
 }
 
-// Ничего не может продвинуться дальше, но план не завершён — обычно следствие FAILED-шага, чьи
-// зависимые никогда не откроются (spec_plan_execution "план исчерпан").
+// Nothing can progress further, but the plan is not complete - usually a consequence of a FAILED step whose
+// dependents will never open (spec_plan_execution "plan exhausted").
 export function isExhausted(state: PlanExecutionState): boolean {
   if (isComplete(state)) return false;
   const anyInFlight = state.plan.steps.some((s) => state.stepStatus[s.step_id] === 'sent');
@@ -213,25 +213,25 @@ export function escalationNotify(reason: string): BusMessage {
   return { id: randomUUID(), from: 'cli', to: 'orchestrator', type: 'NOTIFY', ts: new Date().toISOString(), payload };
 }
 
-// files текущего (status: 'sent') шага агента — источник для pathGuard уровень-3
-// (spec_write_path_validation §3, задача C.14). null: агент не участвует в плане, или у него
-// сейчас нет активного шага — уровень-3 пропускается, как при отсутствии плана.
+// files of the current (status: 'sent') agent step - source for pathGuard level-3
+// (spec_write_path_validation §3, task C.14). null: the agent is not participating in the plan, or has
+// there is no active step now - level-3 is skipped, as if there is no plan.
 export function currentStepFilesForAgent(state: PlanExecutionState, agentId: string): string[] | null {
   const step = state.plan.steps.find((s) => s.agent_id === agentId && state.stepStatus[s.step_id] === 'sent');
   return step ? step.files : null;
 }
 
-// task_id текущего (status: 'sent') шага агента — источник для git_checkpoints (задача B.8):
-// "первый WRITE в рамках task_id" нужен именно этот task_id, не step_id.
+// task_id of the current (status: 'sent') agent step - source for git_checkpoints (task B.8):
+// "the first WRITE within task_id" requires this particular task_id, not step_id.
 export function currentTaskIdForAgent(state: PlanExecutionState, agentId: string): string | null {
   const step = state.plan.steps.find((s) => s.agent_id === agentId && state.stepStatus[s.step_id] === 'sent');
   return step ? (state.taskIds[step.step_id] ?? null) : null;
 }
 
-// Дедуп STATUS (ARCHITECTURE §8): состояние агента фиксируется, но во время механического
-// исполнения плана рутинный WORKING/IDLE переход НЕ повод будить оркестратора (эскалация только
-// по исключениям — см. applyResult/applyOwnershipViolation выше) — toOrchestrator здесь
-// намеренно всегда undefined, дедуп сводит любую последовательность STATUS к нулю сообщений.
+// Dedup STATUS (ARCHITECTURE §8): the agent's state is fixed, but during mechanical
+// plan execution routine WORKING/IDLE transition is NOT a reason to wake up the orchestrator (escalation only
+// by exception - see applyResult/applyOwnershipViolation above) - toOrchestrator here
+// intentionally always undefined, dedup reduces any STATUS sequence to zero messages.
 export function dedupeStatus(state: PlanExecutionState, msg: BusMessage): { state: PlanExecutionState; toOrchestrator?: BusMessage } {
   if (msg.type !== 'STATUS') return { state };
   const payload = msg.payload as StatusPayload;

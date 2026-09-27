@@ -1,6 +1,6 @@
-// Наблюдение за вкладками агентов (spec_agent_recovery, ARCHITECTURE §6): реактивно на события
-// chrome.tabs, без таймеров и без опроса — только тот единственный "устойчивый" heartbeat
-// (расширение → CLI, chrome.alarms), что уже держит background/index.ts.
+// Monitor agent tabs (spec_agent_recovery, ARCHITECTURE §6): reactive to events
+// chrome.tabs, no timers and no polling - only that one “stable” heartbeat
+// (extension → CLI, chrome.alarms) which already holds background/index.ts.
 export interface TabsApi {
   onRemoved: { addListener(cb: (tabId: number) => void): void };
 }

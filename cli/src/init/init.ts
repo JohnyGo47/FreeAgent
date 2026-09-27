@@ -1,5 +1,5 @@
-// `freeagent init` — spec_cli_init. Создаёт /freeagent/, конфиг, копирует встроенные скиллы,
-// опционально git init. Идемпотентно: повторный вызов без --force ничего не трогает.
+// `freeagent init` - spec_cli_init. Creates /freeagent/, config, copies built-in skills,
+// optional git init. Idempotent: calling again without --force does not affect anything.
 import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, writeFile, copyFile, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -38,7 +38,7 @@ async function ensureStructure(freeagentDir: string): Promise<void> {
   await mkdir(freeagentDir, { recursive: true });
   for (const dir of STRUCTURE_DIRS) await mkdir(join(freeagentDir, dir), { recursive: true });
   for (const file of STRUCTURE_FILES) {
-    if (file === 'freeagent.config.json') continue; // конфиг создаёт saveConfig — валидный JSON, не пустой файл
+    if (file === 'freeagent.config.json') continue; // config creates saveConfig - valid JSON, not an empty file
     const path = join(freeagentDir, file);
     if (!(await exists(path))) await writeFile(path, '', 'utf8');
   }
@@ -109,8 +109,8 @@ export async function runInit(projectRoot: string, opts: InitOptions = {}): Prom
   const projectId = randomUUID();
   const { config } = await loadConfig(freeagentDir);
   config.project_id = projectId;
-  // git_checkpoints:false персистируется (не только checkpointsDisabledWarning из этого вызова
-  // init) — задача B.13 требует ПОСТОЯННОГО warning в TUI между сессиями, не только в момент init.
+  // git_checkpoints:false persists (not just the checkpointsDisabledWarning from this call
+  // init) - task B.13 requires a CONSTANT warning in the TUI between sessions, not only at the time of init.
   if (checkpointsDisabledWarning) config.git_checkpoints = false;
   await saveConfig(freeagentDir, config);
 

@@ -1,5 +1,5 @@
-// fs.edit (spec_file_access): заменить единственное вхождение old на new. Неуникальное old —
-// всегда ошибка, никогда тихий no-op.
+// fs.edit (spec_file_access): replace the only occurrence of old with new. Non-unique old —
+// always an error, never a silent no-op.
 import { readFile, writeFile } from 'node:fs/promises';
 import { relative } from 'node:path';
 import { validateWritePath } from './pathGuard.ts';

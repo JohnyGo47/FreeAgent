@@ -1,4 +1,4 @@
-// Маршрутизация сообщений шины к commands/<instance_id>.jsonl (spec_cli, ARCHITECTURE §3).
+// Routing bus messages to commands/<instance_id>.jsonl (spec_cli, ARCHITECTURE §3).
 import { randomUUID } from 'node:crypto';
 import type { BusMessage, ErrorPayload } from '../../../shared/bus-types/index.ts';
 import { type AgentsRegistry, isValidAddressee, validAgentIds } from '../registry/registry.ts';
@@ -18,8 +18,8 @@ function errorMessage(msg: BusMessage, registry: AgentsRegistry): BusMessage {
   return { id: randomUUID(), from: 'cli', to: msg.from, type: 'ERROR', ts: new Date().toISOString(), payload };
 }
 
-// Переходный статус — не IDLE и не WORKING (ARCHITECTURE, spec_cli constraint "буфер задач для агентов
-// в переходном статусе"). WORKING не буферится: агент сам разберётся со своей очередью.
+// Transitional status - neither IDLE nor WORKING (ARCHITECTURE, spec_cli constraint "task buffer for agents
+// in transitional status"). WORKING is not buffered: the agent will deal with its own queue.
 function isTransitional(status: AgentsRegistry[string]['status']): boolean {
   return status !== 'IDLE' && status !== 'WORKING';
 }
@@ -48,7 +48,7 @@ export function route(
   return { toCommands: [{ instanceId: agent.instance_id, message: msg }] };
 }
 
-// Вызывается после того, как READY от agent_id обработан и его статус переведён в IDLE.
+// Called after the READY from agent_id has been processed and its status has been converted to IDLE.
 export function flushBuffered(
   agentId: string,
   registry: AgentsRegistry,

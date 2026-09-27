@@ -1,4 +1,4 @@
-// Диспетчер: все коды ошибок enum + happy path каждой операции (spec_file_access шаг 2).
+// Dispatcher: all error codes enum + happy path of each operation (spec_file_access step 2).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';

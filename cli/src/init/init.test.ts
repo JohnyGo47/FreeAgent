@@ -82,10 +82,10 @@ test('no git, no --no-git: asks to init; confirming runs git init', async (t) =>
   assert.equal(result.gitInitialized, true);
 });
 
-// spec_git_checkpoints задача B.13: "ПОСТОЯННЫЙ warning в TUI" — не только в момент этого вызова
-// init (result.checkpointsDisabledWarning), но и в следующих сессиях, поэтому config.git_checkpoints
-// персистируется как false, не только возвращается в результате.
-test('--no-git: warning, continues without asking, git_checkpoints:false персистируется в конфиге', async (t) => {
+// spec_git_checkpoints task B.13: "PERMANENT warning in TUI" - not only at the time of this call
+// init (result.checkpointsDisabledWarning), but also in subsequent sessions, so config.git_checkpoints
+// persists as false, not only returned as a result.
+test('--no-git: warning, continues without asking, git_checkpoints:false persists in the config', async (t) => {
   const dir = await tmpDir();
   t.after(() => rm(dir, { recursive: true, force: true }));
 

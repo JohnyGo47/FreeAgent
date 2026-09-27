@@ -1,66 +1,66 @@
 # Spec: md_memory_template
 # Version: 2.0
-# Читать вместе с ARCHITECTURE.md (§7 память пишется постоянно)
+# Reading with ARCHITECTURE.md (§7 memory is written constantly)
 
 ## Goal
-Формат MEMORY.md, который надёжно заполняет любая бесплатная модель и потребляет любая другая. Плюс валидатор полноты.
+Format MEMORY.md, It reliably fills any free model and consumes any other model.. Plus the fullness validator..
 
 ## Output
 - `/shared/templates/MEMORY_TEMPLATE.md`
-- `validateMemory(md: string)` в `/shared`
+- `validateMemory(md: string)` escaping `/shared`
 
-## Формат
+## Format
 ```markdown
 # MEMORY: {agent_id}
 # Generated: {ISO timestamp}
-# Task: {task_id или NONE}
+# Task: {task_id or NONE}
 
 ## Current state
-Одним абзацем: что делаю сейчас и на каком шаге остановился.
+One paragraph: What I am doing now and what step I have taken..
 
 ## Completed
-- Завершённые подзадачи (что НЕ надо переделывать)
+- Completed sub-tasks (what not to redo)
 
 ## In progress
-Что начато но не закончено: какие файлы тронуты, что изменено, что осталось.
+What started but not finished: What files are touched, modified, what's left.
 
 ## Key decisions
-- Принятые решения с причинами (чтобы преемник их не пересматривал)
+- Decisions made with reasons (and that their successors should not re-examine them.)
 
 ## Files touched
-- `path/to/file` — что сделано
+- `path/to/file` — done
 
 ## Next steps
-1. Шаг, с которого продолжать
+1. Step., proceed
 2. ...
 
 ## Warnings
-Грабли, на которые уже наступили.
+Grabley., which have already been.
 ```
 
 ## Constraints
-- Обязательные секции: `Current state`, `Next steps`. Остальные могут быть `NONE`
-- Максимум 4000 символов. При превышении агент режет по приоритету: `Warnings` < `Key decisions` < `Completed`. `Current state` и `Next steps` не режутся
-- Только plain markdown: без HTML, без вложенных код-блоков глубже одного уровня (ломают инжект тег-формата)
-- **Генерируется после каждой завершённой задачи**, а не по достижении порога контекста (ARCHITECTURE §7). Порог означает «пора переключаться», а не «пора спасаться»
-- При переключении на бэкап шаблон отправляется **инлайном полностью**, не ссылкой на скилл
-- Сохраняется в `/freeagent/memory/<agent_id>.md`, перезапись предыдущей версии допустима (история — забота git-чекпоинтов)
+- Mandatory sections: `Current state`, `Next steps`. The rest may be `NONE`
+- Maximum 4000 symbolism. If the agent is over-sized, cuts on priority: `Warnings` < `Key decisions` < `Completed`. `Current state` and `Next steps` no cut
+- Only plain markdown: without HTML, without nested code blocks deeper than one level (break the tag-format injection)
+- **It is generated after each completed task.**, Not when the context threshold is reached. (ARCHITECTURE §7). The threshold means «switch-over», not «save-time»
+- When switching to backup, the template is sent **fully online**, non-skill
+- Save in `/freeagent/memory/<agent_id>.md`, Rewriting the previous version is acceptable (history git-checkpoint)
 
 ## Dependencies
-`spec_skills_system` (секция Memory protocol в ролях), `spec_fs_folder_access`
+`spec_skills_system` (section Memory protocol role-play), `spec_fs_folder_access`
 
 ## Tests
 ### Unit
-1. Полный шаблон → `validateMemory` ok
-2. Без `Next steps` → ошибка с именем секции
-3. > 4000 символов → warning, не ошибка (длинная память лучше, чем никакой)
-4. `NONE` в необязательных секциях → ok
-5. Вложенный код-блок глубже одного уровня → warning
+1. Complete pattern → `validateMemory` ok
+2. No `Next steps` → section-name error
+3. > 4000 symbolism → warning, fault (long memory better, nothing)
+4. `NONE` optionally → ok
+5. A code block is deeper than one level → warning
 
 ### Integration check
-Реальная бесплатная модель заполняет шаблон по игрушечной задаче → валидация проходит → результат скармливается **другой** модели с вопросом «что дальше» → ответ соответствует Next steps
+Real-life free model fills out template on toy task → validation is taking place → feeding **other** question-model «next» → response Next steps
 
 ### Definition of done
-- Тесты зелёные, перенос контекста между двумя разными LLM подтверждён вручную
-- `spec_agent_recovery` и `spec_backup_agents` ссылаются на этот формат, не описывают свой
-- Прогон integration check'ов предыдущих PR
+- Tests green., Transferring the context between two different LLM hand-approved
+- `spec_agent_recovery` and `spec_backup_agents` refer to this format, do not describe
+- Run. integration check'previous PR

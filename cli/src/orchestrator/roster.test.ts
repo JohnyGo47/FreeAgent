@@ -4,8 +4,8 @@ import { buildRosterUpdateMessage } from './roster.ts';
 import type { AgentsRegistry } from '../registry/registry.ts';
 
 const skills = [
-  { name: 'coder', summary: 'пишет код' },
-  { name: 'tester', summary: 'запускает тесты по спекам, отчёт в test_report.md' },
+  { name: 'coder', summary: 'writes code' },
+  { name: 'tester', summary: 'runs tests based on specs, report in test_report.md' },
 ];
 
 test('ROSTER UPDATE contains only agents whose status or summary changed', () => {

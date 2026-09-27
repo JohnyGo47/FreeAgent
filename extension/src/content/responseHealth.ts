@@ -1,6 +1,6 @@
-// response_health (spec_response_health): классификация ответа, который пришёл, но не рабочий.
-// Детект — в расширении (оно видит DOM), решения по классу — в CLI (ARCHITECTURE §5/§6).
-// Только content script — здесь нет DOM API напрямую, текст и счётчики передаются снаружи.
+// response_health (spec_response_health): classification of a response that arrived, but is not working.
+// Detection is in the extension (it sees the DOM), class decisions are in the CLI (ARCHITECTURE §5/§6).
+// Content script only - there is no DOM API directly, text and counters are passed externally.
 
 export interface FailurePatterns {
   unavailable: string[];
@@ -12,7 +12,7 @@ export type HealthClass = 'unavailable' | 'rate_limited' | 'context_full' | 'no_
 
 export interface ClassifyParams {
   text: string;
-  parsedMessageCount: number; // fromTagFormat(text).length — не дублируется здесь
+  parsedMessageCount: number; // fromTagFormat(text).length - not duplicated here
   patterns: FailurePatterns;
   threadCharCount: number;
   contextWindow: number;
@@ -25,8 +25,8 @@ function matchesAny(text: string, patterns: string[]): boolean {
   return patterns.some((p) => text.toLowerCase().includes(p.toLowerCase()));
 }
 
-// Stateful: no_tags триггерит только на второй подряд короткий/безтеговый ответ (ARCHITECTURE §6) —
-// счётчик живёт на уровне вкладки, поэтому класс, а не чистая функция.
+// Stateful: no_tags triggers only the second short/tagged reply in a row (ARCHITECTURE §6) —
+// the counter lives at the tab level, so it's a class and not a pure function.
 export class ResponseHealthTracker {
   private consecutiveNoTags = 0;
 

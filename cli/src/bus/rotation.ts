@@ -1,6 +1,6 @@
-// bus_rotation (spec_bus_rotation v1.0) — архивирует старую часть message_bus.jsonl без потери
-// сообщений и без порчи курсоров: курсоры главной шины по seq (ARCHITECTURE §4), после ротации
-// новый файл начинается с seq N+1, старый seq просто не находится — это ожидаемо, не ошибка.
+// bus_rotation (spec_bus_rotation v1.0) - archives the old part of message_bus.jsonl without loss
+// messages and without damaging cursors: main bus cursors by seq (ARCHITECTURE §4), after rotation
+// the new file starts with seq N+1, the old seq is simply not found - this is expected, not an error.
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -13,8 +13,8 @@ export interface RotationConfig {
   keepMinMs: number;
 }
 
-// По умолчанию: ротация при > 5MB, оставить последние 1000 сообщений или за последний час —
-// что больше (Contract "Точка разреза").
+// Default: rotation at > 5MB, leave last 1000 messages or last hour -
+// which is greater (Contract "Cut point").
 export const DEFAULT_ROTATION_CONFIG: RotationConfig = {
   thresholdBytes: 5 * 1024 * 1024,
   keepMinMessages: 1000,
@@ -26,7 +26,7 @@ export interface RotationPlan {
   keep: BusMessage[];
 }
 
-// Чистая функция решения — где резать. I/O (файлы, gzip, lock) — в rotateIfNeeded.
+// Pure decision function - where to cut. I/O (files, gzip, lock) - in rotateIfNeeded.
 export function planRotation(messages: BusMessage[], config: RotationConfig, nowMs: number): RotationPlan {
   if (messages.length <= config.keepMinMessages) return { archive: [], keep: messages };
 
@@ -35,11 +35,11 @@ export function planRotation(messages: BusMessage[], config: RotationConfig, now
   const firstRecentIdx = messages.findIndex((m) => Date.parse(m.ts) >= cutoffTs);
   const byTimeIdx = firstRecentIdx === -1 ? messages.length : firstRecentIdx;
 
-  // "что больше" — большее окно keep = меньший индекс среза.
+  // "what is larger" is a larger window keep = smaller slice index.
   let cutIdx = Math.max(0, Math.min(byCountIdx, byTimeIdx));
 
-  // Не резать пару TASK-RESULT: TASK до точки разреза без RESULT (где угодно в наборе) —
-  // сдвинуть точку назад до этого TASK.
+  // Don't cut the TASK-RESULT: TASK pair until the cut point without RESULT (anywhere in the set) -
+  // move the point back to this TASK.
   const resultedTaskIds = new Set<string>();
   for (const m of messages) {
     if (m.type === 'RESULT') {
@@ -57,8 +57,8 @@ export function planRotation(messages: BusMessage[], config: RotationConfig, now
   return { archive: messages.slice(0, cutIdx), keep: messages.slice(cutIdx) };
 }
 
-// Порог — единственное конфигурируемое поле спеки (Contract: "по умолчанию 5MB, конфигурируемо").
-// keepMinMessages/keepMinMs — фиксированные константы Contract'а, не вынесены в конфиг.
+// Threshold is the only configurable spec field (Contract: "default 5MB, configurable").
+// keepMinMessages/keepMinMs - fixed Contract constants, not included in the config.
 export function rotationConfigFromThreshold(thresholdBytes: number): RotationConfig {
   return { ...DEFAULT_ROTATION_CONFIG, thresholdBytes };
 }
@@ -68,9 +68,9 @@ export interface RotateResult {
   archivedCount?: number;
 }
 
-// Только CLI — единственный writer главной шины (constraint). Порядок: архив пишется ПОЛНОСТЬЮ
-// до перезаписи основного файла (шаги 4-5 под тем же локом, что и мерж) — при падении между ними
-// основной файл остаётся нетронутым, повторный вызов безопасно всё пересчитывает заново.
+// CLI only - the only writer of the main bus (constraint). Order: the archive is written COMPLETELY
+// before overwriting the main file (steps 4-5 under the same lock as the merge) - if there is a fall between them
+// the main file remains untouched, calling again safely recalculates everything again.
 export async function rotateIfNeeded(busPath: string, archiveDir: string, config: RotationConfig, nowMs: number): Promise<RotateResult> {
   const size = await stat(busPath).then((s) => s.size).catch(() => 0);
   if (size < config.thresholdBytes) return { rotated: false };
@@ -91,8 +91,8 @@ export async function rotateIfNeeded(busPath: string, archiveDir: string, config
     await mkdir(archiveDir, { recursive: true });
     const archivePath = join(archiveDir, `bus_${nowMs}.jsonl.gz`);
     const archiveContent = plan.archive.map((m) => JSON.stringify(m)).join('\n') + '\n';
-    // Пишем во временный файл и переименовываем — атомарность на уровне ФС (тот же приём, что
-    // защищает от полу-записанного архива при падении посреди gzipSync/writeFile).
+    // We write to a temporary file and rename it - atomicity at the file system level (the same technique as
+    // protects against a half-written archive if it crashes in the middle of gzipSync/writeFile).
     const tmpPath = `${archivePath}.tmp`;
     await writeFile(tmpPath, gzipSync(Buffer.from(archiveContent, 'utf8')));
     await rename(tmpPath, archivePath);

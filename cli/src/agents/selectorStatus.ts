@@ -1,6 +1,6 @@
-// selector_resilience (spec_selector_resilience) — расширение только сообщает о сломанном
-// селекторе (оно видит DOM), запись в реестр — CLI (единственный writer agents_registry.json,
-// ARCHITECTURE §2). Задача агента приостановлена до подтверждения self-heal кандидата.
+// selector_resilience (spec_selector_resilience) - extension only reports broken
+// selector (it sees the DOM), writing to the registry - CLI (single writer_registry.json,
+// ARCHITECTURE §2). The agent's task is suspended until the candidate's self-heal is confirmed.
 import type { AgentsRegistry, RegisteredAgent } from '../registry/registry.ts';
 
 export interface MarkSelectorBrokenOutcome {

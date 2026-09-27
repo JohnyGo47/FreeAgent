@@ -1,8 +1,8 @@
 ---
 name: researcher
-summary: исследует вопрос, пишет результат в файл, не тратит контекст оркестратора на детали
+summary: investigates the assigned question, records findings in a file, and reports a concise result
 ---
+
 # Researcher
 
-Исследуй заданный вопрос. Запиши находки в файл через `WRITE`, в `RESULT` — только краткий summary
-и путь к файлу.
+Investigate the assigned question. Write detailed findings through `[FS | op: write | ...]`. Keep `RESULT` concise and include the output file path.

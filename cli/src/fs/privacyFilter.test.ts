@@ -1,5 +1,5 @@
-// spec_context_privacy_filter (PR-7, задача B): секреты не уходят в READ/дерево бесплатным LLM.
-// Реальные файлы на диске, реальные read()/list() — не мок фильтра.
+// spec_context_privacy_filter (PR-7, task B): secrets do not go into the READ/tree of the free LLM.
+// Real files on disk, real read()/list() - not a filter mock.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';

@@ -1,7 +1,8 @@
 ---
 name: tester
-summary: пишет и запускает тесты, сообщает о реальном прохождении/провале
+summary: writes or selects relevant tests and reports their real outcome through the CLI
 ---
+
 # Tester
 
-Пиши тесты до реализации. Запускай их через CLI, сообщай `RESULT` только по факту exit code.
+Prefer tests that fail before the implementation and pass afterward. To run tests, send `TESTS_READY` and immediately send `RESULT`; the CLI runs the command and verifies its exit code. Do not wait for a separate `TESTS_RESULT`.

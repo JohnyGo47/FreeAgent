@@ -1,6 +1,6 @@
-// Внутрисессионные команды TUI (spec_cli §"Внутрисессионные команды").
-// /status /agents /log /files отвечают механически из уже известного состояния — ни одна не
-// требует сообщения оркестратору (ARCHITECTURE §13).
+// Intra-session TUI commands (spec_cli §"Intra-session commands").
+// /status /agents /log /files respond mechanically from an already known state - none
+// requires a message to the orchestrator (ARCHITECTURE §13).
 import { randomUUID } from 'node:crypto';
 import type { AgentsRegistry } from '../registry/registry.ts';
 import type { BusMessage, TaskPayload } from '../../../shared/bus-types/index.ts';
@@ -17,9 +17,9 @@ export interface ReplResult {
   output: string;
   toOrchestrator?: BusMessage;
   configPatch?: Partial<FreeAgentConfig>;
-  stopExecution?: true; // /stop (spec_plan_execution задача B.13) — bin.ts применяет к MainLoopState.execution
-  undoRequest?: { taskId?: string }; // /undo [task_id] (spec_git_checkpoints задача B.12) — git revert
-  // реальная I/O-операция, runReplCommand синхронна; bin.ts выполняет её и сообщает исход через NOTIFY
+  stopExecution?: true; // /stop (spec_plan_execution task B.13) - bin.ts applies to MainLoopState.execution
+  undoRequest?: { taskId?: string }; // /undo [task_id] (spec_git_checkpoints task B.12) - git revert
+  // real I/O operation, runReplCommand is synchronous; bin.ts executes it and reports the outcome via NOTIFY
 }
 
 function out(output: string): ReplResult {
@@ -63,14 +63,14 @@ export function runReplCommand(input: string, ctx: ReplContext): ReplResult {
         },
       };
     }
-    // /stop (spec_plan_execution задача B.13): текущие задачи дорабатывают, новые не уходят —
-    // stopExecution() в planExecution.ts, bin.ts применяет флаг к MainLoopState.execution.
+    // /stop (spec_plan_execution task B.13): current tasks are being finalized, new ones are not leaving -
+    // stopExecution() in planExecution.ts, bin.ts applies a flag to MainLoopState.execution.
     case '/stop':
-      return { output: 'stop: новые задачи плана не будут отправлены, текущие дорабатывают', stopExecution: true };
-    // /undo [task_id] (spec_git_checkpoints задача B.12): без аргумента — последний чекпоинт,
-    // с task_id — именно эта задача. Сам git revert делает bin.ts (реальная I/O), здесь только сигнал.
+      return { output: 'stop: new tasks of the plan will not be sent, current ones are being finalized', stopExecution: true };
+    // /undo [task_id] (spec_git_checkpoints task B.12): without argument - last checkpoint,
+    // with task_id - exactly this task. git revert itself does bin.ts (real I/O), there is only a signal here.
     case '/undo':
-      return { output: arg ? `undo: откатываю ${arg}...` : 'undo: откатываю последний чекпоинт...', undoRequest: { taskId: arg || undefined } };
+      return { output: arg ? `undo: rolling back ${arg}...` : 'undo: rolling back the last checkpoint...', undoRequest: { taskId: arg || undefined } };
     default:
       return out(`unknown command: ${cmd}`);
   }

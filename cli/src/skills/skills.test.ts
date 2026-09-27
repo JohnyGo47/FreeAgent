@@ -14,12 +14,12 @@ async function tmpSkillsDir(): Promise<string> {
 }
 
 test('valid skill parses and is included in the list', () => {
-  const content = ['---', 'name: seo_auditor', 'summary: аудит сайтов на техническое SEO', '---', '', '# Role', 'body text'].join('\n');
+  const content = ['---', 'name: seo_auditor', 'summary: Website audits for technical SEO', '---', '', '# Role', 'body text'].join('\n');
   const result = parseSkillFile(content, 'seo_auditor.md');
   assert.equal(result.ok, true);
   if (result.ok) {
     assert.equal(result.skill.name, 'seo_auditor');
-    assert.equal(result.skill.summary, 'аудит сайтов на техническое SEO');
+    assert.equal(result.skill.summary, 'Website audits for technical SEO');
     assert.match(result.skill.roleMd, /# Role/);
   }
 });

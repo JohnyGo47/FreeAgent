@@ -1,6 +1,6 @@
-// Новое поведение PR-7 (spec_write_path_validation A): паттерн-матчинг защищённых путей
-// (расширяет PROTECTED_SEGMENTS из PR-4), симлинк-эскейп, Windows case-insensitive префикс.
-// Базовые traversal/.git/.env кейсы уже покрыты fsFunctions.test.ts — здесь только новое.
+// New PR-7 behavior (spec_write_path_validation A): pattern matching of protected paths
+// (extends PROTECTED_SEGMENTS from PR-4), symlink escape, Windows case-insensitive prefix.
+// Basic traversal/.git/.env cases are already covered fsFunctions.test.ts - only new stuff here.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, symlink } from 'node:fs/promises';
@@ -70,16 +70,16 @@ test('write: normal src file still accepted', async () => {
   }
 });
 
-// Обязательный, платформо-независимый: не требует реального симлинка на диске (Windows без
-// Developer Mode/admin не даёт его создать — EPERM), поэтому раньше это покрытие тихо пропадало
-// на CI под Windows. realpathFn подменяет только результат резолва, вся остальная логика
-// (лексическая проверка, isWithin, код ошибки) — настоящая, не замокана.
+// Mandatory, platform-independent: does not require a real symlink on disk (Windows without
+// Developer Mode/admin does not allow you to create it - EPERM), so before this coverage quietly disappeared
+// on CI under Windows. realpathFn replaces only the result of the resolve, all other logic
+// (lexical check, isWithin, error code) - real, not hidden.
 test('symlink escape (mocked realpath): resolveInRoot returns PATH_ESCAPE without a real symlink on disk', async () => {
   const root = await makeProject();
   try {
     const outsideDir = join(tmpdir(), 'freeagent-outside-mocked');
-    // Симулирует escape/ -> outsideDir: лексически путь внутри root (проходит уровень-1 lexical
-    // check), но realpath уводит наружу — ровно сценарий symlink-эскейпа.
+    // Simulates escape/ -> outsideDir: lexical path inside root (passes level-1 lexical
+    // check), but realpath leads outside - exactly a symlink escape script.
     const fakeRealpath = async (p: string): Promise<string> => (p.includes('escape') ? join(outsideDir, 'pwned.txt') : p);
 
     const res = await resolveInRoot(root, 'escape/pwned.txt', fakeRealpath);
@@ -90,9 +90,9 @@ test('symlink escape (mocked realpath): resolveInRoot returns PATH_ESCAPE withou
   }
 });
 
-// Дополнительно, best-effort на настоящей ФС: не единственная гарантия покрытия (тест выше уже
-// проверяет логику безусловно), поэтому скип здесь допустим — это лишь подтверждение, что
-// реальный fs.realpath ведёт себя так, как ожидает resolveInRoot.
+// Additionally, best-effort on a real FS: not the only coverage guarantee (the test above is already
+// checks the logic unconditionally), so a skip is acceptable here - this is just confirmation that
+// real fs.realpath behaves as resolveInRoot expects.
 test('symlink pointing outside root is rejected via real fs.realpath (best-effort, platform permissions permitting)', async (t) => {
   const root = await makeProject();
   try {
@@ -126,9 +126,9 @@ test('error message does not leak the absolute project root', async () => {
   }
 });
 
-// Уровень-3 (PR-8, spec_write_path_validation §3 / spec_plan_execution задача C): владение по
-// PlanStep.files текущего шага. Источник ownedFiles — plan_execution; pathGuard про план ничего
-// не знает, только про список строк.
+// Level-3 (PR-8, spec_write_path_validation §3 / spec_plan_execution task C): ownership of
+// PlanStep.files of the current step. Source ownedFiles - plan_execution; pathGuard about the plan nothing
+// doesn't know, only about a list of strings.
 test('level-3: path inside ownedFiles is accepted', async () => {
   const root = await makeProject();
   try {

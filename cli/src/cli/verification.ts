@@ -1,6 +1,6 @@
-// CLI устанавливает факт запуском тестов, не верит RESULT: DONE на слово (spec_verification,
-// ARCHITECTURE §9). Design note (spec): verification НЕ знает про план — принимает задачу/тесты,
-// возвращает вердикт; кто позвал (plan_execution) — не её дело, обратной зависимости нет.
+// CLI establishes the fact by running tests, does not believe RESULT: DONE at its word (spec_verification,
+// ARCHITECTURE §9). Design note (spec): verification does NOT know about the plan - accepts the task/tests,
+// returns verdict; who called (plan_execution) is none of her business, there is no inverse relationship.
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { mkdir, appendFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,11 +8,11 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-// Белый список (задача A.2): проверяется по токенам (argv[0]/argv[1]), не по сырой строке —
-// "их аргументы" разрешены и идут дальше нетронутыми. На POSIX защита от инъекции структурная:
-// spawn с shell:false и argv-массивом — `;`/`&&`/бэктики никогда не интерпретируются шеллом,
-// какой бы ни была строка. На Windows shell обязателен для .cmd (см. SAFE_ARG_RE ниже) — там
-// защита не структурная, а через отказ на любом небезопасном символе аргумента.
+// Whitelist (task A.2): checked by tokens (argv[0]/argv[1]), not by raw string -
+// "their arguments" are resolved and move on untouched. On POSIX, injection protection is structural:
+// spawn with shell:false and argv array - `;`/`&&`/backticks are never interpreted by the shell,
+// whatever the string is. On Windows shell is required for .cmd (see SAFE_ARG_RE below) - there
+// protection is not structural, but through a refusal on any unsafe argument symbol.
 const ALLOW_RULES: ((argv: string[]) => boolean)[] = [
   (a) => a[0] === 'npm' && a[1] === 'test',
   (a) => a[0] === 'npm' && a[1] === 'run' && /^test:[\w-]+$/.test(a[2] ?? ''),
@@ -25,9 +25,9 @@ const ALLOW_RULES: ((argv: string[]) => boolean)[] = [
   (a) => a[0] === 'vitest',
 ];
 
-// Упрощённый токенайзер: пробелы + "..."/'...' без экранирования внутри. Тестовые команды почти
-// всегда без пробелов в путях; полноценный shell-lexer — за рамками того, что здесь нужно
-// (ponytail: добавить, если реально понадобится команда с пробелом в пути).
+// Simplified tokenizer: spaces + "..."/'...' without escaping inside. Test commands almost
+// always without spaces in paths; full-fledged shell-lexer - beyond what's needed here
+// (ponytail: add if you really need a command with a space in the path).
 function tokenize(command: string): string[] {
   const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
   const out: string[] = [];
@@ -36,15 +36,15 @@ function tokenize(command: string): string[] {
   return out;
 }
 
-// Windows не умеет исполнять .cmd/.bat (npm/pnpm/yarn/локальные jest.cmd) без участия shell
-// (подтверждено эмпирически: spawn('npm.cmd', ..., {shell:false}) -> EINVAL). Поэтому на win32
-// runCommand зовёт spawn с shell:true — а Node сам предупреждает: "arguments are not escaped,
-// only concatenated" (реальный вектор инъекции через &/|/^ и т.п.). Закрываем его не экранированием
-// (это как раз тот тонкий код, где легко ошибиться), а отказом: каждый токен аргумента обязан
-// состоять только из "безопасных" символов, иначе вся команда ERROR ещё до spawn — на любой ОС,
-// не только Windows (defense-in-depth). Легитимным командам тестраннера (пути, флаги, `--`,
-// имена тестов без пробелов) этого достаточно; пробелы внутри одного аргумента и настоящие
-// shell-метасимволы просто не пропускаются, а не "аккуратно экранируются".
+// Windows cannot execute .cmd/.bat (npm/pnpm/yarn/local jest.cmd) without shell participation
+// (empirically confirmed: spawn('npm.cmd', ..., {shell:false}) -> EINVAL). Therefore on win32
+// runCommand calls spawn with shell: true - and Node itself warns: "arguments are not escaped,
+// only concatenated" (real injection vector via &/|/^, etc.). We close it without escaping
+// (this is exactly the kind of subtle code where it’s easy to make a mistake), but by default: each argument token must
+// consist only of "safe" characters, otherwise the entire ERROR command even before spawn - on any OS,
+// not only Windows (defense-in-depth). Legitimate testrunner commands (paths, flags, `--`,
+// test names without spaces) this is enough; spaces within one argument and real
+// shell metacharacters are simply not skipped, not "neatly escaped".
 const SAFE_ARG_RE = /^[\w.\-/:@=+,]+$/;
 
 export interface AllowedCommandCheck {
@@ -66,19 +66,19 @@ export interface RunResult {
   timedOut: boolean;
 }
 
-// Тип совпадает с node:child_process.spawn — тесты подменяют её моком, продакшен зовёт настоящую.
+// The type matches node:child_process.spawn - tests replace it with a mock, production calls the real one.
 export type SpawnFn = (
   command: string,
   args: string[],
   options: { cwd: string; shell: boolean; timeout: number; killSignal: NodeJS.Signals; detached?: boolean },
 ) => ChildProcess;
 
-// Убивает дерево процессов, не только прямого потомка. На win32 shell:true оборачивает
-// исполняемый .cmd в cmd.exe — proc.pid тогда PID cmd.exe, а не тестраннера под ним; native
-// spawn({timeout}) убивает только его, реальный процесс продолжает жить (проверено эмпирически:
-// без taskkill /T тестовый "долгий процесс" переживает свой таймаут). taskkill /T убивает всё
-// дерево. На POSIX process.kill(-pid) убивает группу процессов (detached:true ниже делает proc
-// лидером своей группы).
+// Kills the process tree, not just the direct descendant. On win32 shell:true wraps
+// executable .cmd in cmd.exe - proc.pid then PID of cmd.exe, not the testrunner under it; native
+// spawn({timeout}) kills only it, the real process continues to live (empirically tested:
+// without taskkill /T the test "long process" experiences its timeout). taskkill /T kills everything
+// tree. On POSIX process.kill(-pid) kills a group of processes (detached:true below does proc
+// leader of his group).
 async function killTree(proc: ChildProcess): Promise<void> {
   if (proc.pid === undefined) return;
   if (process.platform === 'win32') {
@@ -94,15 +94,15 @@ async function killTree(proc: ChildProcess): Promise<void> {
 
 export async function runCommand(argv: string[], cwd: string, timeoutMs: number, spawnFn: SpawnFn = spawn): Promise<RunResult> {
   return new Promise((resolve) => {
-    // shell:true только на win32 — единственный способ исполнить .cmd/.bat (npm и т.п.), см.
-    // комментарий у SAFE_ARG_RE про то, чем это компенсируется. На POSIX shell:false как и раньше.
-    // detached:true (POSIX) делает proc лидером собственной группы процессов — нужно killTree.
+    // shell:true only on win32 - the only way to execute .cmd/.bat (npm, etc.), see
+    // comment from SAFE_ARG_RE about how this is compensated. On POSIX shell:false as before.
+    // detached:true (POSIX) makes proc the leader of its own process group - killTree is needed.
     let proc: ChildProcess;
     try {
       proc = spawnFn(argv[0], argv.slice(1), {
         cwd,
         shell: process.platform === 'win32',
-        timeout: 0, // таймаут — свой, ниже: native timeout не добивает дерево процессов на win32
+        timeout: 0, // timeout is yours, below: native timeout does not finish the process tree on win32
         killSignal: 'SIGKILL',
         detached: process.platform !== 'win32',
       });
@@ -130,9 +130,9 @@ export async function runCommand(argv: string[], cwd: string, timeoutMs: number,
   });
 }
 
-// Сверка имён тестов (задача A.5): наивное substring-сравнение — достаточно для "предупредить",
-// не для точного парсинга вывода 8 разных test runner'ов (jest/pytest/go test печатают имена
-// по-разному). Расхождение — warning, не блокирует (spec constraint).
+// Verifying test names (task A.5): naive substring comparison - enough to "warn"
+// not for accurately parsing the output of 8 different test runners (jest/pytest/go test print names
+// differently). Discrepancy - warning, does not block (spec constraint).
 export interface TestNameComparison {
   ok: boolean;
   warning?: string;
@@ -141,7 +141,7 @@ export interface TestNameComparison {
 export function compareTestNames(stdout: string, expectedNames: string[]): TestNameComparison {
   const missing = expectedNames.filter((name) => !stdout.includes(name));
   if (missing.length === 0) return { ok: true };
-  return { ok: false, warning: `имена тестов расходятся со спекой, не найдены в выводе: ${missing.join(', ')}` };
+  return { ok: false, warning: `test names are inconsistent with the spec, not found in the output: ${missing.join(', ')}` };
 }
 
 async function writeRunLog(logsDir: string, taskId: string, command: string, result: RunResult): Promise<string> {
@@ -164,20 +164,20 @@ async function writeRunLog(logsDir: string, taskId: string, command: string, res
 
 export interface VerifyParams {
   taskId: string;
-  command?: string; // отсутствует -> unverified (задача A.4, "первый шаг любой спеки")
-  cwd: string; // директория проекта (fsRoot)
+  command?: string; // absent -> unverified (task A.4, “the first step of any spec”)
+  cwd:string; // project directory (fsRoot)
   timeoutMs: number;
   logsDir: string;
-  writtenFiles?: string[]; // файлы, которые агент реально записал за этот шаг — проверяются
-  // на существование до всякого TESTS_READY (адаптация "WRITE заявлен, файла нет" под
-  // архитектуру этого репозитория: CLI сам пишет файлы через FS_CALL, агент не может "заявить"
-  // запись без того, чтобы CLI её выполнил — но файл теоретически может пропасть между записью
-  // и верификацией; проверка ловит именно это, а не гипотетическую ложь агента)
-  expectedTestNames?: string[]; // раздел Tests из спеки задачи — сверка имён (задача A.5).
-  // Ничто в текущем плане (PlanStep) не несёт ссылку на спеку/ожидаемые имена — источника этих
-  // данных пока нет в проводке (PlanStep = {step_id,agent_id,description,files,depends_on}, без
-  // поля под спеку). compareTestNames реализована и протестирована независимо; здесь параметр
-  // остаётся неподключённым до появления такого источника — это НЕ тихий пропуск, задел явный.
+  writtenFiles?: string[]; // files that the agent actually wrote during this step are checked
+  // to exist until any TESTS_READY (adaptation of "WRITE declared, no file" under
+  // the architecture of this repository: the CLI itself writes files via FS_CALL, the agent cannot “claim”
+  // write without the CLI doing it - but the file could theoretically disappear between writes
+  // and verification; the check catches exactly this, and not the agent’s hypothetical lie)
+  expectedTestNames?: string[]; // Tests section from the task spec - name matching (task A.5).
+  // Nothing in the current plan (PlanStep) carries a link to the spec/expected names - the source of these
+  // there is no data in the transaction yet (PlanStep = {step_id,agent_id,description,files,depends_on}, without
+  // fields for spec). compareTestNames is implemented and tested independently; here is the parameter
+  // remains unconnected until such a source appears - this is NOT a silent pass, the problem is obvious.
   runCommandFn?: typeof runCommand;
   spawnFn?: SpawnFn;
 }

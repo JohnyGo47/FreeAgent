@@ -1,73 +1,73 @@
 # Spec: response_complete_detection
 # Version: 1.0
-# Читать вместе с ARCHITECTURE.md (§6 наблюдение)
+# Reading with ARCHITECTURE.md (§6 observation)
 
 ## Goal
-Определить момент, когда LLM закончил стримить ответ. Без этого парсер будет читать полответа.
+Determine the moment, when LLM finished streaming. Without it, the parser will read half the answer..
 
 ## Input
-- DOM вкладки LLM
-- `selectors.typing_indicator` из адаптера (может быть `null`)
+- DOM tab LLM
+- `selectors.typing_indicator` adapter (maybe `null`)
 - `selectors.response_container`
 
 ## Output
-- событие `responseComplete` с полным текстом ответа
+- event `responseComplete` full-text
 
 ## Contract
 
-### Три стратегии, по приоритету
+### Three strategies, priority
 
-**1. Typing indicator (если есть).** Селектор `typing_indicator` из адаптера указывает на элемент, видимый во время генерации (спиннер, анимированные точки, «печатает...»). Стратегия:
+**1. Typing indicator (if).** Selector `typing_indicator` The adapter indicates the element, generational (spinner, cartoon, «printer...»). Strategy:
 ```
-indicator появился → ответ начался
-indicator исчез → debounce 500ms → responseComplete
+indicator appeared → response
+indicator disappeared → debounce 500ms → responseComplete
 ```
-Debounce нужен: некоторые интерфейсы мигают индикатором между chunk'ами.
+Debounce needle: Some interfaces flash an indicator between chunk'mi.
 
-**2. Mutation debounce (универсальный fallback).** `MutationObserver` на `response_container`. Нет мутаций N секунд → ответ завершён.
+**2. Mutation debounce (universal fallback).** `MutationObserver` on `response_container`. No mutations. N seconds → reply completed.
 ```
-мутация → сбросить таймер
-таймер истёк (2 сек по умолчанию) → responseComplete
+mutation → time-off
+timer's out (2 default) → responseComplete
 ```
-Значение 2 секунды — компромисс: модель на медленном сервере может делать паузы до ~1.5 сек между chunk'ами, но дольше 2 секунд — скорее всего готово. Конфигурируемо per-adapter.
+Meaning. 2 second-to-second compromise: The model on the slow server can pause until ~1.5 squat chunk'mi, longer 2 seconds, probably ready.. Configurable per-adapter.
 
-**3. Стоп-кнопка как сигнал.** Некоторые интерфейсы показывают кнопку «остановить генерацию» во время стриминга и убирают после. Если адаптер знает её селектор (`selectors.stop_button`, опциональное поле) — её исчезновение подтверждает typing indicator.
+**3. Stop button as a signal.** Some interfaces show a button. «stop generation» during the streaming and cleaned up after. If the adapter knows her selector (`selectors.stop_button`, field-off) — Her disappearance confirms typing indicator.
 
-### Выбор стратегии
+### Choosing a strategy
 ```
-typing_indicator не null → стратегия 1 (+ стратегия 3 как подтверждение, если stop_button есть)
-typing_indicator null    → стратегия 2
+typing_indicator not null → strategy 1 (+ strategy 3 proof, if stop_button eat)
+typing_indicator null    → strategy 2
 ```
 
-Стратегия 2 всегда работает как страховка: даже если typing_indicator заглючил (например, CSS-класс поменялся и селектор сломался), через 2 сек mutation debounce поймает завершение.
+Strategy 2 It always works as insurance.: even typing_indicator numb (for example, CSS-The class changed and the selector broke down.), through 2 sack mutation debounce finish.
 
-### Текст ответа
-`responseComplete` отдаёт `innerText` последнего дочернего элемента `response_container` (последний ответ, не весь тред). Определение «последнего»: элемент с максимальным DOM-порядком, содержащий текст, добавленный после инжекта.
+### Text of the reply
+`responseComplete` giveaway `innerText` last-child `response_container` (last-minute, not-all-tread). Definition «last»: maximum DOM-naturally, text, post-injection.
 
 ## Constraints
-- Работает **только в content script**
-- `MutationObserver` настроен `{ childList: true, characterData: true, subtree: true }` на response_container — не на всю страницу (производительность)
-- Debounce-таймер отменяется при новом инжекте (следующее сообщение пришло, предыдущий ответ принудительно «завершён» — берём что есть)
-- Ложное раннее срабатывание (модель сделала паузу > 2 сек, потом продолжила) — допустимо: `fromTagFormat` не найдёт полного блока тегов, и при следующем реальном завершении парсер соберёт полный текст. Worst case — один `no_tags` перед реальным ответом
-- Максимальное ожидание: 5 минут. Если ответ не завершился — принудительный `responseComplete` + `RESPONSE_HEALTH: no_tags` (скорее всего модель зависла)
+- It works. **only content script**
+- `MutationObserver` tuned `{ childList: true, characterData: true, subtree: true }` on response_container — not-all-page (productivity)
+- Debounce-The timer is canceled with a new injection (The next message came, previous response «finished» — Take what you've got.)
+- False early activation (model paused > 2 sack, then continued) — permissible: `fromTagFormat` You won't find a full block of tags., And the next time you actually finish, the parser will collect the full text.. Worst case — single `no_tags` before the real answer
+- Maximum waiting time: 5 minute. If the answer is not completed, the compulsory `responseComplete` + `RESPONSE_HEALTH: no_tags` (It's probably a dead model.)
 
 ## Dependencies
-`spec_llm_adapter_registry` (селекторы), `spec_ext_manifest` (content script)
+`spec_llm_adapter_registry` (selectors), `spec_ext_manifest` (content script)
 
 ## Tests
 ### Unit
-1. Typing indicator: появился → исчез → debounce 500ms → `responseComplete` с полным текстом
-2. Мигание indicator (3 быстрых вкл/выкл) → один `responseComplete` после финального исчезновения
-3. Mutation debounce: текст добавляется порциями → `responseComplete` через 2 сек после последней мутации
-4. Оба одновременно: indicator + mutations → indicator имеет приоритет, debounce как страховка
-5. Новый инжект во время ожидания → предыдущий ответ завершён принудительно
-6. Таймаут 5 мин → принудительный `responseComplete`
-7. Текст извлекается из последнего ответа, а не из всего треда
+1. Typing indicator: appeared → disappeared → debounce 500ms → `responseComplete` full-text
+2. Flushing indicator (3 fast-on/out) → single `responseComplete` after the final disappearance
+3. Mutation debounce: text added in portions → `responseComplete` through 2 after the last mutation
+4. Both at the same time: indicator + mutations → indicator priority, debounce insurance
+5. A new injection while waiting → Previous response completed forcibly
+6. timemouth 5 mine → forced `responseComplete`
+7. The text is extracted from the last answer., not from the whole thread
 
 ### Integration check
-Живая вкладка LLM: инжект → дождаться `responseComplete` → текст содержит полный ответ модели, не обрезан
+Live tab. LLM: injector → wait `responseComplete` → The text contains the complete answer of the model, uncircumcised
 
 ### Definition of done
-- Тесты зелёные на минимум 2 LLM (один с typing_indicator, один без)
-- Ни одного случая обрезанного ответа при нормальной работе
-- Прогон integration check'ов предыдущих PR
+- Tests are green at minimum. 2 LLM (one-on typing_indicator, single-handed)
+- No case of cropped response during normal operation
+- Run. integration check'previous PR

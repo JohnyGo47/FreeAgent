@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { parseBusLine } from '../../../shared/bus-types/index.ts';
 import { InstanceBusWriter } from './instanceBusWriter.ts';
 
-// Мок FileSystemFileHandle — только та часть контракта, что использует Tier 1 (spec_message_bus_write).
+// Mock FileSystemFileHandle - only that part of the contract that uses Tier 1 (spec_message_bus_write).
 class FakeFileHandle {
   private content = '';
 
@@ -28,7 +28,7 @@ class FakeFileHandle {
   }
 }
 
-test('Tier 1: одиночная запись — валидный JSON в файле', async () => {
+test('Tier 1: single entry - valid JSON in file', async () => {
   const handle = new FakeFileHandle();
   const writer = new InstanceBusWriter(handle as unknown as FileSystemFileHandle);
 
@@ -40,7 +40,7 @@ test('Tier 1: одиночная запись — валидный JSON в фа�
   assert.equal(parsed.ok, true);
 });
 
-test('Tier 1: id ставит писатель при создании (crypto.randomUUID)', async () => {
+test('Tier 1: id is set by the writer when creating (crypto.randomUUID)', async () => {
   const handle = new FakeFileHandle();
   const writer = new InstanceBusWriter(handle as unknown as FileSystemFileHandle);
 
@@ -51,7 +51,7 @@ test('Tier 1: id ставит писатель при создании (crypto.r
   if (parsed.ok) assert.ok(parsed.msg.id.length > 0, 'id must be set by the writer');
 });
 
-test('Tier 1: 10 последовательных send() — порядок сохранён, потерь нет (без файлового lock)', async () => {
+test('Tier 1: 10 consecutive send() - order preserved, no losses (no file lock)', async () => {
   const handle = new FakeFileHandle();
   const writer = new InstanceBusWriter(handle as unknown as FileSystemFileHandle);
 
@@ -65,7 +65,7 @@ test('Tier 1: 10 последовательных send() — порядок со
   assert.deepEqual(order, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
 });
 
-test('Tier 1: 10 конкурентных send() через Promise.all — очередь сериализует запись, потерь нет', async () => {
+test('Tier 1: 10 concurrent send() via Promise.all - queue serializes record, no losses', async () => {
   const handle = new FakeFileHandle();
   const writer = new InstanceBusWriter(handle as unknown as FileSystemFileHandle);
 

@@ -1,4 +1,4 @@
-// Одна CLI-сессия на проект — единственный writer главной шины и реестра (spec_cli constraint).
+// One CLI session per project - the only writer of the main bus and registry (spec_cli constraint).
 import { open, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -39,7 +39,7 @@ export async function acquireSessionLock(freeagentDir: string): Promise<SessionL
     if (Number.isInteger(existingPid) && isRunning(existingPid)) {
       throw new SessionAlreadyRunning(existingPid);
     }
-    // Лок от процесса, которого больше нет — переиспользуем.
+    // Lock from a process that no longer exists - let's reuse it.
     await writeFile(path, String(process.pid), 'utf8');
   }
 

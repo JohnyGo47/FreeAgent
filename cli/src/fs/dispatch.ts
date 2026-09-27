@@ -1,6 +1,6 @@
-// Диспетчер {op,args} → [FS_RESULT] (spec_file_access "Enforcement на стороне CLI").
-// UNKNOWN_OP/BAD_ARGS проверяются здесь, до похода на диск; PATH_ESCAPE/FORBIDDEN_PATH/NOT_FOUND
-// приходят из fs.*-функций (path guard уже часть каждой из них).
+// Dispatcher {op,args} → [FS_RESULT] (spec_file_access "CLI-side enforcement").
+// UNKNOWN_OP/BAD_ARGS are checked here before going to disk; PATH_ESCAPE/FORBIDDEN_PATH/NOT_FOUND
+// come from fs.* functions (path guard is already part of each of them).
 import { FS_OPS, type FsOp, type FsResult, fsError } from './types.ts';
 import { read } from './read.ts';
 import { list } from './list.ts';
@@ -15,17 +15,17 @@ export interface FsCallArgs {
   query?: string;
   type?: string;
   kind?: string;
-  body?: string; // write: тело heredoc
-  old?: string; // edit: фрагмент до ---NEW---
-  new?: string; // edit: фрагмент после ---NEW---
+  body?: string; // write: body heredoc
+  old?: string; // edit: fragment before ---NEW---
+  new?: string; // edit: fragment after ---NEW---
 }
 
 function isFsOp(op: string): op is FsOp {
   return (FS_OPS as readonly string[]).includes(op);
 }
 
-// ownedFiles: files текущего шага агента в plan_execution (уровень-3, spec_plan_execution задача
-// C) — не относится к list/search/read, только к write/edit пробрасывается дальше.
+// ownedFiles: files of the current agent step in plan_execution (level-3, spec_plan_execution task
+// C) - does not apply to list/search/read, only forwards to write/edit.
 export async function dispatch(root: string, call: FsCallArgs, ownedFiles?: string[] | null): Promise<FsResult> {
   if (!isFsOp(call.op)) {
     return fsError('UNKNOWN_OP', `unknown op: ${call.op}`, `valid ops: ${FS_OPS.join(', ')}`);

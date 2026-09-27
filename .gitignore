@@ -1,3 +1,30 @@
 node_modules/
 /freeagent/
 /extension/*.js
+/.tmp-translate-env/
+/.tmp-translate-data/
+
+# Runtime state accidentally created at the repository root by early builds.
+/agents_registry.json
+/checkpoints.json
+/commands/
+/cursors/
+/freeagent.config.json
+/freeagent.lock
+/incoming/
+/llm_adapter_registry.json
+/logs/
+/memory/
+/message_bus.jsonl
+/selector_overrides.json
+/skills/
+
+# Local environment and editor files.
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

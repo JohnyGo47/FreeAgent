@@ -1,14 +1,14 @@
-// spec_context_privacy_filter (PR-7, задача B): секреты пользователя не уходят в контекст
-// бесплатных LLM. Слой 1 — файл целиком не отдаётся по READ (built-in паттерны + .freeagentignore
-// + .npmrc с _authToken). Слой 2 — маскирование похожих на секреты значений внутри разрешённых
-// файлов. Точка вызова — read.ts, перед возвратом content (единственная точка, spec Constraints).
+// spec_context_privacy_filter (PR-7, task B): user secrets do not go into the context
+// free LLM. Layer 1 - the entire file is not served via READ (built-in patterns + .freeagentignore
+// + .npmrc with _authToken). Layer 2 - masking secret-like values ​​inside allowed values
+// files. The point of call is read.ts, before returning content (single point, spec Constraints).
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildMatcher, readIgnoreFile, type IgnoreMatcher } from './ignore.ts';
 import { SECRET_FILE_PATTERNS } from './privacyRules.ts';
 
-// Уже своя, более узкая матчер: только секретные паттерны + пользовательский .freeagentignore —
-// без .gitignore/BUILTIN_JUNK (dist/build мусор не про приватность, читать их можно).
+// Already our own, narrower matcher: only secret patterns + custom .freeagentignore -
+// without .gitignore/BUILTIN_JUNK (dist/build garbage is not about privacy, you can read them).
 export async function loadPrivacyMatcher(root: string): Promise<IgnoreMatcher> {
   const patterns = [...SECRET_FILE_PATTERNS, ...(await readIgnoreFile(join(root, '.freeagentignore')))];
   return buildMatcher(patterns);
@@ -36,7 +36,7 @@ interface SecretPattern {
   re: RegExp;
 }
 
-// Прямо-опознаваемые формы секретов — работают в любом файле, кавычки не обязательны.
+// Directly identifiable forms of secrets - work in any file, quotes are not required.
 const SECRET_VALUE_PATTERNS: SecretPattern[] = [
   { type: 'api_key', re: /\bsk-[A-Za-z0-9_-]{10,}/g },
   { type: 'api_key', re: /\bpk_[A-Za-z0-9_-]{10,}/g },
@@ -47,13 +47,13 @@ const SECRET_VALUE_PATTERNS: SecretPattern[] = [
   { type: 'bearer_token', re: /\bBearer\s+[A-Za-z0-9._-]{8,}/g },
 ];
 
-// Длинный токен в кавычках после `=`/`:` — кавычки отличают литерал ("sk-...") от голой
-// конструкции языка (process.env.API_KEY без кавычек этому не соответствует, тест не ловит).
+// Long token in quotes after `=`/`:` - quotes distinguish a literal ("sk-...") from a bare one
+// language constructs (process.env.API_KEY without quotes does not correspond to this, the test does not catch).
 const QUOTED_TOKEN_RE = /([:=]\s*)(['"])([A-Za-z0-9+/_-]{16,}=*)\2/g;
 
-// dotenv-подобный файл (test.env.example и т.п., но не сам .env — тот исключён целиком слоем 1):
-// KEY=value без кавычек — единственный формат, который не поймать конструкцией языка, поэтому
-// маскируем значение независимо от того, похоже ли оно на секрет (лучше перестраховаться).
+// dotenv-like file (test.env.example, etc., but not .env itself - that one is excluded entirely by layer 1):
+// KEY=value without quotes is the only format that cannot be caught by the language construct, so
+// mask the value regardless of whether it looks like a secret (better to be safe).
 const ENV_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*\s*=\s*)(.+)$/gm;
 
 function isEnvLikeBasename(basename: string): boolean {

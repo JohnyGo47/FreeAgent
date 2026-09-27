@@ -1,5 +1,5 @@
-// spec_response_complete_detection Tests — таймеры и наблюдение через fake clock (DI, как
-// ensureOffscreen.test.ts), без jsdom.
+// spec_response_complete_detection Tests - timers and monitoring via fake clock (DI, like
+// ensureOffscreen.test.ts), without jsdom.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ResponseWatcher, type ResponseWatcherDeps, type ObserveHandle, type MinimalElement } from './responseComplete.ts';

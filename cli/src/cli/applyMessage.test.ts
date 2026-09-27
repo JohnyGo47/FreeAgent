@@ -65,12 +65,12 @@ async function skillsDirWithCoder(): Promise<string> {
   await mkdir(join(dir, 'skills'), { recursive: true });
   await writeFile(
     join(dir, 'skills', 'coder.md'),
-    ['---', 'name: coder', 'summary: пишет код', '---', '# Coder role body'].join('\n'),
+    ['---', 'name: coder', 'summary: writes code', '---', '# Coder role body'].join('\n'),
     'utf8',
   );
   await writeFile(
     join(dir, 'skills', 'orchestrator.md'),
-    ['---', 'name: orchestrator', 'summary: координирует агентов', '---', '# Orchestrator role body'].join('\n'),
+    ['---', 'name: orchestrator', 'summary: coordinates agents', '---', '# Orchestrator role body'].join('\n'),
     'utf8',
   );
   return dir;
@@ -114,7 +114,7 @@ test('handleRegisterRequest: registering the orchestrator embeds the current ros
   const registerMsg: BusMessage = { id: 'x', from: 'browser_b', to: 'cli', type: 'REGISTER_REQUEST', ts: new Date().toISOString(), payload };
 
   const outcome = await handleRegisterRequest(dir, existingRegistry, registerMsg);
-  assert.equal(outcome.registry.orchestrator1.role, 'orchestrator');
+  assert.equal(outcome.registry.orchestrator.role, 'orchestrator');
   const text = (outcome.toCommand?.message.payload as { args: { text: string } }).args.text;
-  assert.match(text, /coder1 \[IDLE\] пишет код/);
+  assert.match(text, /coder1 \[IDLE\] writes code/);
 });

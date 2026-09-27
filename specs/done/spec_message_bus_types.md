@@ -1,45 +1,45 @@
 # Spec: message_bus_types
-# Version: 2.2 — FS_CALL/FS_RESULT добавлены (микро-PR перед PR-5, проводка [FS] через шину)
-# Читать вместе с ARCHITECTURE.md (§4 шина, §2 компоненты)
+# Version: 2.2 — FS_CALL/FS_RESULT added (microscopic-PR beforehand PR-5, wiring [FS] tyre-wire)
+# Reading with ARCHITECTURE.md (§4 tire, §2 component)
 
 ## Goal
-Пакет `/shared/bus-types`: типы протокола шины, статусы агентов, валидация, конвертеры JSON ⇄ тег-текст. Ноль рантайм-зависимостей. Компилируется и для Node.js (CLI), и для esbuild-бандла расширения.
+Package `/shared/bus-types`: bus-types, agentship, validation, converter JSON ⇄ tag-text. Zero Renttime Dependencies. Compiled and for Node.js (CLI), for esbuild-clout.
 
 ## Output
 `/shared/bus-types/index.ts`
 
 ## Contract
 
-### MessageType — 19 типов, закрытый union
+### MessageType — 19 type, closed union
 ```typescript
 export type MessageType =
-  // задачи и результаты
+  // objectives and outcomes
   | 'TASK' | 'RESULT' | 'STATUS'
-  // жизненный цикл агента
+  // agent-cycle
   | 'READY' | 'REGISTER_REQUEST' | 'TAB_STATE' | 'HEARTBEAT'
-  // файлы
+  // file
   | 'WRITE' | 'READ' | 'TESTS_READY' | 'FS_CALL' | 'FS_RESULT'
-  // планирование
+  // planning
   | 'PLAN' | 'PLAN_REVISED' | 'APPROVED'
-  // здоровье
+  // health
   | 'RESPONSE_HEALTH'
-  // системное
+  // systemic
   | 'NOTIFY' | 'COMMAND' | 'ERROR';
 ```
 
-**Правило против разбухания union:** конкретные действия (`PAUSE`, `RECOVER_AGENT`, `RESEND_PROMPT`, `SWITCH_TO_BACKUP`, `REQUEST_MEMORY`) — это **значения** `CommandPayload.command`, а не отдельные типы. Тип описывает категорию сообщения, не действие.
+**Rule against swelling union:** concrete action (`PAUSE`, `RECOVER_AGENT`, `RESEND_PROMPT`, `SWITCH_TO_BACKUP`, `REQUEST_MEMORY`) — it **significance** `CommandPayload.command`, not separate types. Type describes the category of the message, non-action.
 
-**`HEARTBEAT` — от расширения к CLI, один на инстанс.** Не от агента (см. ARCHITECTURE §6).
+**`HEARTBEAT` — extending CLI, one-instant.** Not from an agent. (centimeter. ARCHITECTURE §6).
 
-**`STATUS` — выводит CLI** из тайминга TASK/RESULT (ARCHITECTURE §12); агент его не шлёт — модель по своей инициативе сообщений не отправляет (§6).
+**`STATUS` — lead out CLI** timing TASK/RESULT (ARCHITECTURE §12); The agent does not send it - the model does not send messages on its own initiative (§6).
 
-**`FS_CALL`/`FS_RESULT` — [FS]-вызов агента и его результат, как обычный `BusMessage`** (микро-PR перед PR-5, `spec_file_access`). Heredoc-тело `[FS]`-вызова едет **строкой** в `payload` — браузер его не парсит (content script кладёт сырой блок от модели как есть), разбирает только `parseFsCall` в CLI. `FS_RESULT` адресуется обратно вызвавшему агенту (`to` = его `agent_id`) тем же маршрутом, что любой адресный `BusMessage` — новый канал не заводится.
+**`FS_CALL`/`FS_RESULT` — [FS]-call-up of the agent and its result, conventionally `BusMessage`** (microscopic-PR beforehand PR-5, `spec_file_access`). Heredoc-body `[FS]`-call-up **line** escaping `payload` — browser doesn't parsit it (content script Putting a raw block from the model as is), only `parseFsCall` escaping CLI. `FS_RESULT` returns to the agent who called (`to` = his `agent_id`) same-route, whatever `BusMessage` — new channel not started.
 
-### Конверт
+### envelope
 ```typescript
 export interface BusMessage {
-  id: string;          // uuid, ставит отправитель при создании; стабилен до записи в incoming; дедуп мержа
-  seq?: number;        // только в главной шине, присваивает CLI при мерже
+  id: string;          // uuid, sender when creating; stable until recorded incoming; dead-up merjah
+  seq?: number;        // tyre-only, appropriate CLI mercilessly
   from: string;        // agent_id | 'user' | 'cli' | 'extension' | instance_id
   to: string;          // agent_id | 'orchestrator' | 'cli' | 'extension' | 'broadcast'
   type: MessageType;
@@ -48,9 +48,9 @@ export interface BusMessage {
 }
 ```
 
-`id` присваивается в момент создания сообщения и **не меняется** при переносе incoming → главная шина. Для сообщений, разобранных из ответа LLM, `id` ставит расширение сразу после `fromTagFormat`. На нём держится дедупликация при мерже (`spec_message_bus_write`): повторная обработка той же строки incoming после креша CLI не создаёт дубля.
+`id` is assigned at the time of the creation of the message and **change** transferable incoming → main-tyre. For communications, parsed-up LLM, `id` Expand immediately after `fromTagFormat`. He's got deduplication in merzha. (`spec_message_bus_write`): reprocessing incoming after-crush CLI he doesn't make a double.
 
-### Payload-типы
+### Payload-type
 ```typescript
 export interface TaskPayload      { task_id: string; description: string; files?: string[]; retry?: boolean; }
 export interface ResultPayload    { task_id: string; status: 'DONE' | 'FAILED'; summary: string; self_assessment?: { percent: number; reasoning: string }; }
@@ -68,54 +68,54 @@ export interface NotifyPayload    { event: string; agent_id?: string; details?: 
 export interface ErrorPayload     { message: string; context?: string; valid_agents?: string[]; }
 ```
 
-`FS_CALL`/`FS_RESULT` не заводят собственный payload-тип — их `payload` это `string` (heredoc-текст `[FS|...]` / рендер `[FS_RESULT]...[/FS_RESULT]`), парсится `parseFsCall`/`dispatch` в CLI (`spec_file_access`), не типами шины.
+`FS_CALL`/`FS_RESULT` don't start your own payload-type `payload` it `string` (heredoc-text `[FS|...]` / renderer `[FS_RESULT]...[/FS_RESULT]`), scatter `parseFsCall`/`dispatch` escaping CLI (`spec_file_access`), non-tyre.
 
-### AgentStatus — единственное определение в проекте
+### AgentStatus — the only definition of the project
 ```typescript
 export type AgentStatus =
-  | 'INITIALIZING'    // инжектирован INIT, ждём READY
-  | 'INIT_FAILED'     // READY не пришёл в срок (не тратит recovery-попытки)
-  | 'IDLE'            // свободен, готов принимать задачи
-  | 'WORKING'         // выполняет задачу
-  | 'SWITCHING'       // переезд на бэкап, задачи в очереди
+  | 'INITIALIZING'    // injectable INIT, wait READY
+  | 'INIT_FAILED'     // READY missed the deadline (spend recovery-try)
+  | 'IDLE'            // free, ready to take up
+  | 'WORKING'         // perform
+  | 'SWITCHING'       // backup, task-line
   | 'BLOCKED'         // auth_required
-  | 'SELECTOR_BROKEN' // селектор не резолвится, ждём подтверждения пользователя
-  | 'SERVICE_DOWN'    // сервис лежит, идёт backoff
-  | 'STANDBY'         // горячий бэкап, инициализирован, не активен
-  | 'FAILED';         // исчерпаны попытки
+  | 'SELECTOR_BROKEN' // selector fails, Waiting for the user confirmation
+  | 'SERVICE_DOWN'    // service, it's backoff
+  | 'STANDBY'         // backup, initialized, non-active
+  | 'FAILED';         // exhausted
 ```
-Десять значений. `IDLE`/`WORKING` — единственная «рабочая» зона: агент готов и получает задачи. Всё остальное — переходные либо терминальные состояния, задачи для них CLI держит в буфере. `ACTIVE` намеренно отсутствует: раньше он пересекался по смыслу с `IDLE`/`WORKING`, а буфер-предикат «вне `ACTIVE`» мог застрять на освободившемся агенте. Ни одна другая спека не объявляет статусы — только импорт отсюда.
+Ten values.. `IDLE`/`WORKING` — single-handed «labour-working» zone: Agent ready and given tasks. Everything else is transitional or terminal., task- CLI buffer. `ACTIVE` absent: He had previously crossed paths with `IDLE`/`WORKING`, a pre-buffer «outside `ACTIVE`» He might have been stuck on a freed agent.. No other speck announces statuses - only imports from here.
 
-### Валидация
+### Validation
 ```typescript
 export type ParseResult = { ok: true; msg: BusMessage } | { ok: false; error: string };
 export function parseBusLine(line: string): ParseResult;
 ```
-Не бросает исключений — битая строка в шине не должна крашить читателя. Строка без обязательных полей (`id`, `from`, `to`, `type`, `ts`) → `{ok:false}`.
+No exceptions – a broken line in a bus should not paint the reader. Line without mandatory fields (`id`, `from`, `to`, `type`, `ts`) → `{ok:false}`.
 
-### Конвертеры (слой перевода для LLM)
+### Converters (translation-layer LLM)
 ```typescript
 export function toTagFormat(msg: BusMessage): string;
 export function fromTagFormat(text: string): BusMessage[];
 ```
-`fromTagFormat` обязан переживать: лишний текст вокруг блока, markdown-обёртку (```), несколько блоков в одном ответе, незакрытый тег в конце (warning + парсить до конца текста). **Это первый рубеж против главного риска проекта — непредсказуемого форматирования бесплатных LLM.**
+`fromTagFormat` must-feel: squirrel, markdown-wrapper (```), multiple blocks in one answer, tag-less (warning + scrape). **This is the first frontier against the main risk of the project – the unpredictable formatting of free software. LLM.**
 
-> **Правка v2.2.** Markdown-заборы больше не вырезаются глобально по всему тексту перед поиском тегов — поиск `[MSG|...]`/`[/MSG]` их и так игнорирует (независимые структуры), а глобальная вырезка молча портила `payload`, когда он сам легитимно содержал тройные бэктики (найдено при проводке `FS_CALL`/`FS_RESULT`, у которых `payload` — произвольная строка, а не только JSON-данные). Markdown-обёртка *вокруг* блока по-прежнему не мешает извлечению — она никогда и не требовала вырезки для этого.
+> **Editing v2.2.** Markdown-Fences are no longer cut globally throughout the text before tag search `[MSG|...]`/`[/MSG]` They're already ignored. (independent), And the global clipping silently spoiled `payload`, When he legitimately contained triple-bectics himself (wired `FS_CALL`/`FS_RESULT`, whose `payload` — line-bar, not JSON-data). Markdown-wrapper *round* The block still does not interfere with the extraction - it never required a cutout for this..
 
-`id` и `seq` в тег-текст **не попадают** — это плумбинг шины, не данные для модели: `seq` присваивает CLI при мерже, `id` — отправитель при создании (для блоков из ответа LLM — расширение при разборе). Поэтому round-trip тег-формата сохраняет `from`/`to`/`type`/`payload`, но не `id`/`seq`.
+`id` and `seq` tag-text **don't get in** — It's a tyre ploughing., modelless: `seq` appropriate CLI mercilessly, `id` — sender (answer-block LLM — parsing). Therefore round-trip tag format retains `from`/`to`/`type`/`payload`, not `id`/`seq`.
 
 ## Dependencies
-Нет — фундаментная спека.
+No - foundational steak.
 
 ## Tests
 ### Unit
-1. Валидное сообщение каждого из 19 типов парсится
-2. Битые строки (не-JSON, без `id`, без `from`, неизвестный `type`, кривой `ts`) → `{ok:false}` без исключений
-3. Round-trip `fromTagFormat(toTagFormat(msg))` эквивалентен исходному по `from`/`to`/`type`/`payload` (`id`/`seq` присваиваются на границах шины и в тег не входят)
-4. `fromTagFormat`: мусор вокруг тегов, markdown-обёртка, два блока в одном тексте — все извлечены
-5. Незакрытый тег — сообщение извлечено, warning залогирован
-6. `AgentStatus` покрывает все 10 значений, экспортируется как значение (не только тип) для рантайм-проверок
+1. Valid message from each 19 parsing
+2. Broken lines (not-JSON, without `id`, without `from`, unknown `type`, curve `ts`) → `{ok:false}` without exception
+3. Round-trip `fromTagFormat(toTagFormat(msg))` equivalent `from`/`to`/`type`/`payload` (`id`/`seq` They are assigned at the tyre boundaries and do not enter the tag)
+4. `fromTagFormat`: tag-shopping, markdown-wrapper, Two blocks in one text – all extracted
+5. Unclosed tag - message extracted, warning pledged
+6. `AgentStatus` cover 10 value, exported as value (not-so-subtle) runtime
 
 ### Definition of done
-- Тесты зелёные, сборка tsc + esbuild в обоих таргетах
-- Ни одна другая спека не объявляет собственные типы сообщений или статусы
+- Tests green., assembly tsc + esbuild both-targeted
+- No other Speaker announces its own message types or statuses.
